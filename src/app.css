@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: oklch(var(--b2));
+}
+
+::-webkit-scrollbar-thumb {
+  background: oklch(var(--bc) / 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(var(--bc) / 0.5);
+}
+
+/* Table hover effects */
+.table tbody tr:hover {
+  cursor: pointer;
+}
+
+/* Status badge colors */
+.badge-assigned {
+  @apply badge-success;
+}
+
+.badge-pending_update {
+  @apply badge-warning;
+}
+
+.badge-damaged {
+  @apply badge-error;
+}
+
+.badge-lost {
+  @apply badge-error;
+}
+
+.badge-retired {
+  @apply badge-neutral;
+}
+
+/* Inactive warning styling */
+.inactive-warning {
+  @apply text-warning;
+}
