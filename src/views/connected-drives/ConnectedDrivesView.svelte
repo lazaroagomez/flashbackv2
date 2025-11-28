@@ -9,17 +9,25 @@
   let loading = $state(true);
   let error = $state(null);
   let selected = $state([]);
-  let formatting = $state(false);
+
+  // Single format state
   let formatDrive = $state(null);
   let showFormatConfirm = $state(false);
 
+  // Bulk format queue state
+  let formatQueue = $state([]);
+  let showBulkFormatConfirm = $state(false);
+
+  const isFormatting = $derived(formatQueue.some(q => q.status === 'formatting'));
   const registeredDrives = $derived(drives.filter(d => d.isRegistered));
   const unregisteredDrives = $derived(drives.filter(d => !d.isRegistered && d.serial));
+  const noSerialDrives = $derived(drives.filter(d => !d.isRegistered && !d.serial));
 
   async function loadDrives() {
     loading = true;
     error = null;
     selected = [];
+    formatQueue = [];
     try {
       drives = await api.detectUsbDevices();
     } catch (e) {
@@ -29,33 +37,35 @@
     }
   }
 
-  function toggleSelect(serial) {
-    if (selected.includes(serial)) {
-      selected = selected.filter(s => s !== serial);
+  function toggleSelect(diskIndex) {
+    if (selected.includes(diskIndex)) {
+      selected = selected.filter(s => s !== diskIndex);
     } else {
-      selected = [...selected, serial];
+      selected = [...selected, diskIndex];
     }
   }
 
-  function toggleSelectAll() {
-    const allSerials = unregisteredDrives.map(d => d.serial);
-    if (allSerials.every(s => selected.includes(s))) {
-      selected = [];
+  function toggleSelectAllUnregistered() {
+    const allIndexes = unregisteredDrives.map(d => d.diskIndex);
+    if (allIndexes.every(idx => selected.includes(idx))) {
+      selected = selected.filter(idx => !allIndexes.includes(idx));
     } else {
-      selected = allSerials;
+      selected = [...new Set([...selected, ...allIndexes])];
     }
   }
 
   function handleRowClick(drive, event) {
     if (drive.isRegistered) {
       if (event.ctrlKey || event.metaKey) {
-        return; // No multiselect for registered drives
+        event.preventDefault();
+        toggleSelect(drive.diskIndex);
+      } else {
+        navigate('usb-drive-detail', { id: drive.dbId });
       }
-      navigate('usb-drive-detail', { id: drive.dbId });
     } else if (drive.serial) {
       if (event.ctrlKey || event.metaKey) {
         event.preventDefault();
-        toggleSelect(drive.serial);
+        toggleSelect(drive.diskIndex);
       }
     }
   }
@@ -71,32 +81,87 @@
   }
 
   function handleBulkRegister() {
-    const selectedDrives = drives.filter(d => selected.includes(d.serial));
+    const selectedDrives = drives.filter(d => selected.includes(d.diskIndex) && !d.isRegistered && d.serial);
     navigate('bulk-register', { drives: selectedDrives });
   }
 
+  // Single format
   function openFormatDialog(drive, event) {
     event.stopPropagation();
     formatDrive = drive;
     showFormatConfirm = true;
   }
 
-  async function handleFormat() {
+  async function handleSingleFormat() {
     if (!formatDrive) return;
-
     showFormatConfirm = false;
-    formatting = true;
+
+    formatQueue = [{ ...formatDrive, status: 'formatting' }];
 
     try {
       await api.formatUsbDrive(formatDrive.diskIndex, 'USB', 'exFAT');
+      formatQueue = [{ ...formatDrive, status: 'done' }];
       showSuccess(`Drive "${formatDrive.model}" formatted successfully`);
-      await loadDrives();
     } catch (e) {
+      formatQueue = [{ ...formatDrive, status: 'error', error: e.message }];
       showError(e.message || 'Format failed');
     } finally {
-      formatting = false;
       formatDrive = null;
+      setTimeout(() => {
+        formatQueue = [];
+        loadDrives();
+      }, 2000);
     }
+  }
+
+  // Bulk format
+  function openBulkFormatDialog() {
+    if (selected.length === 0) return;
+    showBulkFormatConfirm = true;
+  }
+
+  async function handleBulkFormat() {
+    showBulkFormatConfirm = false;
+
+    const drivesToFormat = drives.filter(d => selected.includes(d.diskIndex));
+    formatQueue = drivesToFormat.map(d => ({ ...d, status: 'pending' }));
+    selected = [];
+
+    for (let i = 0; i < formatQueue.length; i++) {
+      formatQueue = formatQueue.map((q, idx) =>
+        idx === i ? { ...q, status: 'formatting' } : q
+      );
+
+      try {
+        await api.formatUsbDrive(formatQueue[i].diskIndex, 'USB', 'exFAT');
+        formatQueue = formatQueue.map((q, idx) =>
+          idx === i ? { ...q, status: 'done' } : q
+        );
+      } catch (e) {
+        formatQueue = formatQueue.map((q, idx) =>
+          idx === i ? { ...q, status: 'error', error: e.message } : q
+        );
+      }
+    }
+
+    const successCount = formatQueue.filter(q => q.status === 'done').length;
+    const errorCount = formatQueue.filter(q => q.status === 'error').length;
+
+    if (successCount > 0) {
+      showSuccess(`${successCount} drive(s) formatted successfully`);
+    }
+    if (errorCount > 0) {
+      showError(`${errorCount} drive(s) failed to format`);
+    }
+
+    setTimeout(() => {
+      formatQueue = [];
+      loadDrives();
+    }, 3000);
+  }
+
+  function getQueueStatus(diskIndex) {
+    return formatQueue.find(q => q.diskIndex === diskIndex);
   }
 
   $effect(() => {
@@ -107,7 +172,7 @@
 <div class="space-y-6">
   <div class="flex justify-between items-center">
     <h1 class="text-2xl font-bold">Connected Drives</h1>
-    <button class="btn btn-ghost btn-sm gap-2" onclick={loadDrives} disabled={loading || formatting}>
+    <button class="btn btn-ghost btn-sm gap-2" onclick={loadDrives} disabled={loading || isFormatting}>
       <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>
@@ -115,11 +180,17 @@
     </button>
   </div>
 
-  {#if selected.length > 0}
+  <!-- Selection Actions Bar -->
+  {#if selected.length > 0 && !isFormatting}
     <div class="flex items-center gap-4 p-3 bg-base-200 rounded-lg">
       <span class="font-medium">{selected.length} drive{selected.length > 1 ? 's' : ''} selected</span>
-      <button class="btn btn-primary btn-sm" onclick={handleBulkRegister}>
-        Register Selected
+      {#if drives.filter(d => selected.includes(d.diskIndex) && !d.isRegistered && d.serial).length > 0}
+        <button class="btn btn-primary btn-sm" onclick={handleBulkRegister}>
+          Register Selected
+        </button>
+      {/if}
+      <button class="btn btn-error btn-sm" onclick={openBulkFormatDialog}>
+        Format Selected
       </button>
       <button class="btn btn-ghost btn-sm" onclick={() => selected = []}>
         Clear
@@ -127,10 +198,43 @@
     </div>
   {/if}
 
-  {#if formatting}
-    <div class="alert alert-info">
-      <span class="loading loading-spinner loading-sm"></span>
-      <span>Formatting drive... This may take a minute.</span>
+  <!-- Format Queue Progress -->
+  {#if formatQueue.length > 0}
+    <div class="card bg-base-100 shadow">
+      <div class="card-body">
+        <h3 class="card-title text-lg">
+          {#if isFormatting}
+            <span class="loading loading-spinner loading-sm"></span>
+            Formatting Drives...
+          {:else}
+            Format Complete
+          {/if}
+        </h3>
+        <div class="space-y-2">
+          {#each formatQueue as item}
+            <div class="flex items-center gap-3 p-2 rounded bg-base-200">
+              {#if item.status === 'pending'}
+                <span class="badge badge-ghost">Waiting</span>
+              {:else if item.status === 'formatting'}
+                <span class="loading loading-spinner loading-sm"></span>
+              {:else if item.status === 'done'}
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+              {:else if item.status === 'error'}
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              {/if}
+              <span class="flex-1">{item.model}</span>
+              <span class="font-mono text-sm text-base-content/60">{item.sizeGB} GB</span>
+              {#if item.status === 'error'}
+                <span class="text-error text-sm">{item.error}</span>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
     </div>
   {/if}
 
@@ -164,6 +268,7 @@
             <table class="table">
               <thead>
                 <tr>
+                  <th></th>
                   <th>USB ID</th>
                   <th>Model</th>
                   <th>Serial</th>
@@ -173,20 +278,46 @@
               </thead>
               <tbody>
                 {#each registeredDrives as drive}
-                  <tr class="hover cursor-pointer" onclick={(e) => handleRowClick(drive, e)}>
+                  {@const queueItem = getQueueStatus(drive.diskIndex)}
+                  <tr
+                    class="hover cursor-pointer"
+                    class:bg-primary={selected.includes(drive.diskIndex)}
+                    class:bg-opacity-20={selected.includes(drive.diskIndex)}
+                    onclick={(e) => handleRowClick(drive, e)}
+                  >
+                    <td onclick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-sm"
+                        checked={selected.includes(drive.diskIndex)}
+                        onchange={() => toggleSelect(drive.diskIndex)}
+                        disabled={isFormatting}
+                      />
+                    </td>
                     <td class="font-mono font-bold text-success">{drive.usbId}</td>
                     <td>{drive.model}</td>
                     <td class="font-mono text-sm">{drive.serial || '—'}</td>
                     <td>{drive.sizeGB}</td>
                     <td onclick={(e) => e.stopPropagation()}>
-                      <button
-                        class="btn btn-ghost btn-sm text-error"
-                        onclick={(e) => openFormatDialog(drive, e)}
-                        disabled={formatting}
-                        title="Format drive (erases all data)"
-                      >
-                        Format
-                      </button>
+                      {#if queueItem}
+                        {#if queueItem.status === 'formatting'}
+                          <span class="loading loading-spinner loading-sm"></span>
+                        {:else if queueItem.status === 'done'}
+                          <span class="text-success">Done</span>
+                        {:else if queueItem.status === 'error'}
+                          <span class="text-error">Failed</span>
+                        {:else}
+                          <span class="text-base-content/50">Waiting</span>
+                        {/if}
+                      {:else}
+                        <button
+                          class="btn btn-ghost btn-sm text-error"
+                          onclick={(e) => openFormatDialog(drive, e)}
+                          disabled={isFormatting}
+                        >
+                          Format
+                        </button>
+                      {/if}
                     </td>
                   </tr>
                 {/each}
@@ -215,8 +346,9 @@
                     <input
                       type="checkbox"
                       class="checkbox checkbox-sm"
-                      checked={unregisteredDrives.length > 0 && unregisteredDrives.every(d => selected.includes(d.serial))}
-                      onchange={toggleSelectAll}
+                      checked={unregisteredDrives.length > 0 && unregisteredDrives.every(d => selected.includes(d.diskIndex))}
+                      onchange={toggleSelectAllUnregistered}
+                      disabled={isFormatting}
                     />
                   </th>
                   <th>Model</th>
@@ -227,35 +359,48 @@
               </thead>
               <tbody>
                 {#each unregisteredDrives as drive}
+                  {@const queueItem = getQueueStatus(drive.diskIndex)}
                   <tr
                     class="hover cursor-pointer"
-                    class:bg-primary={selected.includes(drive.serial)}
-                    class:bg-opacity-20={selected.includes(drive.serial)}
+                    class:bg-primary={selected.includes(drive.diskIndex)}
+                    class:bg-opacity-20={selected.includes(drive.diskIndex)}
                     onclick={(e) => handleRowClick(drive, e)}
                   >
                     <td onclick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         class="checkbox checkbox-sm"
-                        checked={selected.includes(drive.serial)}
-                        onchange={() => toggleSelect(drive.serial)}
+                        checked={selected.includes(drive.diskIndex)}
+                        onchange={() => toggleSelect(drive.diskIndex)}
+                        disabled={isFormatting}
                       />
                     </td>
                     <td>{drive.model}</td>
                     <td class="font-mono text-sm">{drive.serial}</td>
                     <td>{drive.sizeGB}</td>
                     <td onclick={(e) => e.stopPropagation()}>
-                      <button class="btn btn-primary btn-sm" onclick={() => handleRegister(drive)}>
-                        Register
-                      </button>
-                      <button
-                        class="btn btn-ghost btn-sm text-error"
-                        onclick={(e) => openFormatDialog(drive, e)}
-                        disabled={formatting}
-                        title="Format drive (erases all data)"
-                      >
-                        Format
-                      </button>
+                      {#if queueItem}
+                        {#if queueItem.status === 'formatting'}
+                          <span class="loading loading-spinner loading-sm"></span>
+                        {:else if queueItem.status === 'done'}
+                          <span class="text-success">Done</span>
+                        {:else if queueItem.status === 'error'}
+                          <span class="text-error">Failed</span>
+                        {:else}
+                          <span class="text-base-content/50">Waiting</span>
+                        {/if}
+                      {:else}
+                        <button class="btn btn-primary btn-sm" onclick={() => handleRegister(drive)} disabled={isFormatting}>
+                          Register
+                        </button>
+                        <button
+                          class="btn btn-ghost btn-sm text-error"
+                          onclick={(e) => openFormatDialog(drive, e)}
+                          disabled={isFormatting}
+                        >
+                          Format
+                        </button>
+                      {/if}
                     </td>
                   </tr>
                 {/each}
@@ -267,8 +412,8 @@
       </div>
     {/if}
 
-    <!-- Drives without serial (can't be registered) -->
-    {#if drives.some(d => !d.isRegistered && !d.serial)}
+    <!-- Drives without serial -->
+    {#if noSerialDrives.length > 0}
       <div class="card bg-base-100 shadow">
         <div class="card-body">
           <h2 class="card-title text-lg text-warning">
@@ -281,25 +426,47 @@
             <table class="table">
               <thead>
                 <tr>
+                  <th></th>
                   <th>Model</th>
                   <th>Size (GB)</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {#each drives.filter(d => !d.isRegistered && !d.serial) as drive}
+                {#each noSerialDrives as drive}
+                  {@const queueItem = getQueueStatus(drive.diskIndex)}
                   <tr class="hover">
+                    <td>
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-sm"
+                        checked={selected.includes(drive.diskIndex)}
+                        onchange={() => toggleSelect(drive.diskIndex)}
+                        disabled={isFormatting}
+                      />
+                    </td>
                     <td>{drive.model}</td>
                     <td>{drive.sizeGB}</td>
                     <td>
-                      <button
-                        class="btn btn-ghost btn-sm text-error"
-                        onclick={(e) => openFormatDialog(drive, e)}
-                        disabled={formatting}
-                        title="Format drive (erases all data)"
-                      >
-                        Format
-                      </button>
+                      {#if queueItem}
+                        {#if queueItem.status === 'formatting'}
+                          <span class="loading loading-spinner loading-sm"></span>
+                        {:else if queueItem.status === 'done'}
+                          <span class="text-success">Done</span>
+                        {:else if queueItem.status === 'error'}
+                          <span class="text-error">Failed</span>
+                        {:else}
+                          <span class="text-base-content/50">Waiting</span>
+                        {/if}
+                      {:else}
+                        <button
+                          class="btn btn-ghost btn-sm text-error"
+                          onclick={(e) => openFormatDialog(drive, e)}
+                          disabled={isFormatting}
+                        >
+                          Format
+                        </button>
+                      {/if}
                     </td>
                   </tr>
                 {/each}
@@ -312,12 +479,24 @@
   {/if}
 </div>
 
+<!-- Single Format Confirm -->
 <ConfirmDialog
   open={showFormatConfirm}
   title="Format USB Drive"
   message={`WARNING: This will permanently erase ALL data on "${formatDrive?.model}" (${formatDrive?.sizeGB} GB). This action cannot be undone. Are you sure you want to continue?`}
   confirmText="Format Drive"
   confirmClass="btn-error"
-  onconfirm={handleFormat}
+  onconfirm={handleSingleFormat}
   oncancel={() => { showFormatConfirm = false; formatDrive = null; }}
+/>
+
+<!-- Bulk Format Confirm -->
+<ConfirmDialog
+  open={showBulkFormatConfirm}
+  title="Format Multiple Drives"
+  message={`WARNING: This will permanently erase ALL data on ${selected.length} drive(s). This action cannot be undone. Are you sure you want to continue?`}
+  confirmText={`Format ${selected.length} Drive${selected.length > 1 ? 's' : ''}`}
+  confirmClass="btn-error"
+  onconfirm={handleBulkFormat}
+  oncancel={() => showBulkFormatConfirm = false}
 />
