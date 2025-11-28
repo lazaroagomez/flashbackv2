@@ -17,6 +17,8 @@
   import ModelDetail from './views/models/ModelDetail.svelte';
   import VersionList from './views/versions/VersionList.svelte';
   import PendingUpdatesList from './views/pending-updates/PendingUpdatesList.svelte';
+  import ConnectedDrivesView from './views/connected-drives/ConnectedDrivesView.svelte';
+  import BulkRegisterView from './views/connected-drives/BulkRegisterView.svelte';
 
   // Make navigate globally available
   if (typeof window !== 'undefined') {
@@ -35,7 +37,7 @@
     {:else if navigation.currentView === 'usb-drive-detail'}
       <UsbDriveDetail id={navigation.viewParams.id} {navigate} />
     {:else if navigation.currentView === 'usb-drive-create'}
-      <UsbDriveCreate {navigate} />
+      <UsbDriveCreate {navigate} prefill={navigation.viewParams.prefill} />
     {:else if navigation.currentView === 'usb-drive-create-series'}
       <UsbDriveCreateSeries {navigate} />
     {:else if navigation.currentView === 'technicians'}
@@ -54,6 +56,10 @@
       <VersionList />
     {:else if navigation.currentView === 'pending-updates'}
       <PendingUpdatesList {navigate} />
+    {:else if navigation.currentView === 'connected-drives'}
+      <ConnectedDrivesView {navigate} />
+    {:else if navigation.currentView === 'bulk-register'}
+      <BulkRegisterView {navigate} drives={navigation.viewParams.drives} />
     {:else}
       <Dashboard {navigate} />
     {/if}

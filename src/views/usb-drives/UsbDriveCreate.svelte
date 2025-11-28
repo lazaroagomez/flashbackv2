@@ -4,7 +4,7 @@
   import { showSuccess, showError } from '../../lib/stores/toast.svelte.js';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
 
-  let { navigate } = $props();
+  let { navigate, prefill = null } = $props();
 
   let platforms = $state([]);
   let usbTypes = $state([]);
@@ -20,7 +20,10 @@
     model_id: null,
     version_id: null,
     technician_id: null,
-    custom_text: ''
+    custom_text: '',
+    hardware_model: prefill?.hardware_model || '',
+    hardware_serial: prefill?.hardware_serial || '',
+    capacity_gb: prefill?.capacity_gb || null
   });
 
   let selectedType = $state(null);
@@ -154,7 +157,10 @@
       model_id: formData.model_id,
       version_id: formData.version_id,
       technician_id: formData.technician_id,
-      custom_text: formData.custom_text
+      custom_text: formData.custom_text,
+      hardware_model: '',
+      hardware_serial: '',
+      capacity_gb: null
     };
   }
 
@@ -285,6 +291,24 @@
                 maxlength="12"
               />
             </div>
+
+            {#if formData.hardware_serial}
+              <div class="divider">Hardware Info</div>
+              <div class="grid grid-cols-2 gap-4">
+                <div class="form-control">
+                  <label class="label"><span class="label-text">Model</span></label>
+                  <input type="text" class="input input-bordered bg-base-200" value={formData.hardware_model} readonly />
+                </div>
+                <div class="form-control">
+                  <label class="label"><span class="label-text">Serial</span></label>
+                  <input type="text" class="input input-bordered bg-base-200 font-mono" value={formData.hardware_serial} readonly />
+                </div>
+                <div class="form-control">
+                  <label class="label"><span class="label-text">Capacity (GB)</span></label>
+                  <input type="text" class="input input-bordered bg-base-200" value={formData.capacity_gb} readonly />
+                </div>
+              </div>
+            {/if}
 
             <div class="form-control mt-6">
               <button class="btn btn-primary" type="submit" disabled={saving}>

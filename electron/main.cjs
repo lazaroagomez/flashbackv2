@@ -8,6 +8,7 @@ const usbIdGenerator = require('./services/usbIdGenerator.cjs');
 const pdfGenerator = require('./services/pdfGenerator.cjs');
 const eventLogger = require('./services/eventLogger.cjs');
 const { createCrudHandlers, registerCrudHandlers } = require('./services/crudFactory.cjs');
+const usbDetector = require('./services/usbDetector.cjs');
 const {
   appendModelIdCondition,
   USB_DRIVE_BASE_SELECT,
@@ -524,9 +525,9 @@ ipcMain.handle('usb:create', async (event, data, username) => {
 
     // Insert USB drive
     const [result] = await connection.execute(
-      `INSERT INTO usb_drives (usb_id, platform_id, usb_type_id, model_id, version_id, technician_id, custom_text)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [usbId, data.platform_id, data.usb_type_id, data.model_id || null, data.version_id, data.technician_id || null, data.custom_text || null]
+      `INSERT INTO usb_drives (usb_id, platform_id, usb_type_id, model_id, version_id, technician_id, custom_text, hardware_model, hardware_serial, capacity_gb)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [usbId, data.platform_id, data.usb_type_id, data.model_id || null, data.version_id, data.technician_id || null, data.custom_text || null, data.hardware_model || null, data.hardware_serial || null, data.capacity_gb || null]
     );
 
     const usbDriveId = result.insertId;
@@ -552,6 +553,55 @@ ipcMain.handle('usb:create', async (event, data, username) => {
     }
 
     return toPlainObject({ id: usbDriveId, usb_id: usbId, ...data });
+  });
+});
+
+// USB Detection - detect connected USB drives and check registration status
+ipcMain.handle('usb:detect', async () => {
+  try {
+    return await usbDetector.detectUSBDrivesWithStatus(database);
+  } catch (error) {
+    throw new Error(`USB detection failed: ${error.message}`);
+  }
+});
+
+// Bulk register detected USB drives with hardware info
+ipcMain.handle('usb:bulkRegister', async (event, commonData, hardwareList, username) => {
+  return database.withTransaction(async (connection) => {
+    const created = [];
+
+    const names = await eventLogger.fetchEntityNames(connection, {
+      typeId: commonData.usb_type_id,
+      versionId: commonData.version_id,
+      modelId: commonData.model_id
+    });
+    const createdDetails = eventLogger.buildCreationDetails(
+      names.typeName,
+      names.modelName,
+      names.versionCode
+    );
+
+    for (const hw of hardwareList) {
+      const usbId = await usbIdGenerator.getNextId(connection);
+
+      const [result] = await connection.execute(
+        `INSERT INTO usb_drives (usb_id, platform_id, usb_type_id, model_id, version_id, technician_id, hardware_model, hardware_serial, capacity_gb)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [usbId, commonData.platform_id, commonData.usb_type_id, commonData.model_id || null, commonData.version_id,
+         commonData.technician_id || null, hw.hardware_model || null, hw.hardware_serial || null, hw.capacity_gb || null]
+      );
+
+      const usbDriveId = result.insertId;
+      await eventLogger.logEvent(connection, usbDriveId, 'created', createdDetails, username);
+
+      if (commonData.technician_id) {
+        await eventLogger.logTechnicianChange(connection, usbDriveId, null, commonData.technician_id, null, username);
+      }
+
+      created.push({ id: usbDriveId, usb_id: usbId });
+    }
+
+    return toPlainObject(created);
   });
 });
 
