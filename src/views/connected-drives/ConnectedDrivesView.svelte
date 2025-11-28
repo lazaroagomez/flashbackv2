@@ -13,7 +13,7 @@
   let formatDrive = $state(null);
   let showFormatConfirm = $state(false);
 
-  // Filter to only unregistered drives
+  const registeredDrives = $derived(drives.filter(d => d.isRegistered));
   const unregisteredDrives = $derived(drives.filter(d => !d.isRegistered && d.serial));
 
   async function loadDrives() {
@@ -46,8 +46,18 @@
     }
   }
 
-  function handleView(dbId) {
-    navigate('usb-drive-detail', { id: dbId });
+  function handleRowClick(drive, event) {
+    if (drive.isRegistered) {
+      if (event.ctrlKey || event.metaKey) {
+        return; // No multiselect for registered drives
+      }
+      navigate('usb-drive-detail', { id: drive.dbId });
+    } else if (drive.serial) {
+      if (event.ctrlKey || event.metaKey) {
+        event.preventDefault();
+        toggleSelect(drive.serial);
+      }
+    }
   }
 
   function handleRegister(drive) {
@@ -65,7 +75,8 @@
     navigate('bulk-register', { drives: selectedDrives });
   }
 
-  function openFormatDialog(drive) {
+  function openFormatDialog(drive, event) {
+    event.stopPropagation();
     formatDrive = drive;
     showFormatConfirm = true;
   }
@@ -79,7 +90,7 @@
     try {
       await api.formatUsbDrive(formatDrive.diskIndex, 'USB', 'exFAT');
       showSuccess(`Drive "${formatDrive.model}" formatted successfully`);
-      await loadDrives(); // Refresh the list
+      await loadDrives();
     } catch (e) {
       showError(e.message || 'Format failed');
     } finally {
@@ -123,27 +134,83 @@
     </div>
   {/if}
 
-  <div class="card bg-base-100 shadow">
-    <div class="card-body">
-      {#if loading}
-        <div class="flex justify-center py-8">
-          <span class="loading loading-spinner loading-lg"></span>
+  {#if loading}
+    <div class="flex justify-center py-8">
+      <span class="loading loading-spinner loading-lg"></span>
+    </div>
+  {:else if error}
+    <div class="alert alert-error">
+      <span>{error}</span>
+      <button class="btn btn-sm" onclick={loadDrives}>Retry</button>
+    </div>
+  {:else if drives.length === 0}
+    <div class="card bg-base-100 shadow">
+      <div class="card-body text-center py-8 text-base-content/50">
+        No USB drives detected. Connect a USB drive and click Refresh.
+      </div>
+    </div>
+  {:else}
+    <!-- Registered Drives -->
+    {#if registeredDrives.length > 0}
+      <div class="card bg-base-100 shadow">
+        <div class="card-body">
+          <h2 class="card-title text-lg text-success">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Registered ({registeredDrives.length})
+          </h2>
+          <div class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>USB ID</th>
+                  <th>Model</th>
+                  <th>Serial</th>
+                  <th>Size (GB)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each registeredDrives as drive}
+                  <tr class="hover cursor-pointer" onclick={(e) => handleRowClick(drive, e)}>
+                    <td class="font-mono font-bold text-success">{drive.usbId}</td>
+                    <td>{drive.model}</td>
+                    <td class="font-mono text-sm">{drive.serial || '—'}</td>
+                    <td>{drive.sizeGB}</td>
+                    <td onclick={(e) => e.stopPropagation()}>
+                      <button
+                        class="btn btn-ghost btn-sm text-error"
+                        onclick={(e) => openFormatDialog(drive, e)}
+                        disabled={formatting}
+                        title="Format drive (erases all data)"
+                      >
+                        Format
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
         </div>
-      {:else if error}
-        <div class="alert alert-error">
-          <span>{error}</span>
-          <button class="btn btn-sm" onclick={loadDrives}>Retry</button>
-        </div>
-      {:else if drives.length === 0}
-        <div class="text-center py-8 text-base-content/50">
-          No USB drives detected. Connect a USB drive and click Refresh.
-        </div>
-      {:else}
-        <div class="overflow-x-auto">
-          <table class="table">
-            <thead>
-              <tr>
-                {#if unregisteredDrives.length > 0}
+      </div>
+    {/if}
+
+    <!-- Unregistered Drives -->
+    {#if unregisteredDrives.length > 0}
+      <div class="card bg-base-100 shadow">
+        <div class="card-body">
+          <h2 class="card-title text-lg text-error">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            Unregistered ({unregisteredDrives.length})
+          </h2>
+          <div class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr>
                   <th>
                     <input
                       type="checkbox"
@@ -152,68 +219,97 @@
                       onchange={toggleSelectAll}
                     />
                   </th>
-                {/if}
-                <th>Status</th>
-                <th>Model</th>
-                <th>Serial</th>
-                <th>Size (GB)</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each drives as drive}
-                <tr class="hover" class:bg-primary={selected.includes(drive.serial)} class:bg-opacity-10={selected.includes(drive.serial)}>
-                  {#if unregisteredDrives.length > 0}
-                    <td>
-                      {#if !drive.isRegistered && drive.serial}
-                        <input
-                          type="checkbox"
-                          class="checkbox checkbox-sm"
-                          checked={selected.includes(drive.serial)}
-                          onchange={() => toggleSelect(drive.serial)}
-                        />
-                      {/if}
+                  <th>Model</th>
+                  <th>Serial</th>
+                  <th>Size (GB)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each unregisteredDrives as drive}
+                  <tr
+                    class="hover cursor-pointer"
+                    class:bg-primary={selected.includes(drive.serial)}
+                    class:bg-opacity-20={selected.includes(drive.serial)}
+                    onclick={(e) => handleRowClick(drive, e)}
+                  >
+                    <td onclick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        class="checkbox checkbox-sm"
+                        checked={selected.includes(drive.serial)}
+                        onchange={() => toggleSelect(drive.serial)}
+                      />
                     </td>
-                  {/if}
-                  <td>
-                    {#if drive.isRegistered}
-                      <span class="badge badge-success gap-1">Registered</span>
-                    {:else}
-                      <span class="badge badge-error gap-1">Unregistered</span>
-                    {/if}
-                  </td>
-                  <td>{drive.model}</td>
-                  <td class="font-mono text-sm">{drive.serial || '—'}</td>
-                  <td>{drive.sizeGB}</td>
-                  <td class="flex gap-1">
-                    {#if drive.isRegistered}
-                      <button class="btn btn-ghost btn-sm" onclick={() => handleView(drive.dbId)}>
-                        View
-                      </button>
-                    {:else if drive.serial}
+                    <td>{drive.model}</td>
+                    <td class="font-mono text-sm">{drive.serial}</td>
+                    <td>{drive.sizeGB}</td>
+                    <td onclick={(e) => e.stopPropagation()}>
                       <button class="btn btn-primary btn-sm" onclick={() => handleRegister(drive)}>
                         Register
                       </button>
-                    {:else}
-                      <span class="text-base-content/50 text-sm">No serial</span>
-                    {/if}
-                    <button
-                      class="btn btn-ghost btn-sm text-error"
-                      onclick={() => openFormatDialog(drive)}
-                      disabled={formatting}
-                      title="Format drive (erases all data)"
-                    >
-                      Format
-                    </button>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+                      <button
+                        class="btn btn-ghost btn-sm text-error"
+                        onclick={(e) => openFormatDialog(drive, e)}
+                        disabled={formatting}
+                        title="Format drive (erases all data)"
+                      >
+                        Format
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+          <p class="text-xs text-base-content/50 mt-2">Ctrl+click to multi-select</p>
         </div>
-      {/if}
-    </div>
-  </div>
+      </div>
+    {/if}
+
+    <!-- Drives without serial (can't be registered) -->
+    {#if drives.some(d => !d.isRegistered && !d.serial)}
+      <div class="card bg-base-100 shadow">
+        <div class="card-body">
+          <h2 class="card-title text-lg text-warning">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            No Serial (Cannot Register)
+          </h2>
+          <div class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Model</th>
+                  <th>Size (GB)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each drives.filter(d => !d.isRegistered && !d.serial) as drive}
+                  <tr class="hover">
+                    <td>{drive.model}</td>
+                    <td>{drive.sizeGB}</td>
+                    <td>
+                      <button
+                        class="btn btn-ghost btn-sm text-error"
+                        onclick={(e) => openFormatDialog(drive, e)}
+                        disabled={formatting}
+                        title="Format drive (erases all data)"
+                      >
+                        Format
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    {/if}
+  {/if}
 </div>
 
 <ConfirmDialog
