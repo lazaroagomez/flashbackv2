@@ -110,7 +110,8 @@
       return searchChips.some(chip =>
         drive.usb_id?.toUpperCase().includes(chip) ||
         drive.technician_name?.toUpperCase().includes(chip) ||
-        drive.custom_text?.toUpperCase().includes(chip)
+        drive.custom_text?.toUpperCase().includes(chip) ||
+        drive.hardware_serial?.toUpperCase().includes(chip)
       );
     });
   });
@@ -120,7 +121,8 @@
     return searchChips.map(chip => ({
       term: chip,
       found: usbDrives.some(drive =>
-        drive.usb_id?.toUpperCase() === chip
+        drive.usb_id?.toUpperCase() === chip ||
+        drive.hardware_serial?.toUpperCase() === chip
       )
     }));
   });
@@ -162,10 +164,13 @@
     searchChips = [...searchChips, term];
     currentPage = 1;
 
-    // Check if found
-    const drive = usbDrives.find(d => d.usb_id?.toUpperCase() === term);
+    // Check if found by USB ID or Hardware Serial
+    const drive = usbDrives.find(d =>
+      d.usb_id?.toUpperCase() === term ||
+      d.hardware_serial?.toUpperCase() === term
+    );
     if (drive) {
-      showScanFeedback('success', `Found: ${term}`);
+      showScanFeedback('success', `Found: ${drive.usb_id}`);
       // Auto-select if in select mode
       if (scanMode === 'select') {
         selected = new Set([...selected, drive.id]);
@@ -408,7 +413,7 @@
           {chipStatuses}
           mode={scanMode}
           {scanFeedback}
-          placeholder="Scan or type USB IDs... (Enter to add)"
+          placeholder="Scan USB ID or Serial... (Enter to add)"
           onAdd={handleAddChip}
           onRemove={handleRemoveChip}
           onClear={handleClearChips}

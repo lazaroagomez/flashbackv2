@@ -441,6 +441,7 @@ ipcMain.handle('technician:getUsbDrives', async (event, technicianId) => {
 ipcMain.handle('usb:getAll', async (event, filters = {}) => {
   let sql = `
     SELECT u.id, u.usb_id, u.status, u.custom_text, u.created_at, u.updated_at,
+           u.hardware_model, u.hardware_serial, u.capacity_gb,
            p.id as platform_id, p.name as platform_name,
            t.id as usb_type_id, t.name as usb_type_name, t.requires_model,
            m.id as model_id, m.name as model_name, m.model_number,
