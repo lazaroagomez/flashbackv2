@@ -131,7 +131,7 @@
   <!-- Footer -->
   <div class="p-4 border-t border-base-300">
     <div class="flex items-center justify-between">
-      <span class="text-xs text-base-content/50">v1.0.1</span>
+      <span class="text-xs text-base-content/50">v{__APP_VERSION__}</span>
       <div class="dropdown dropdown-top dropdown-end">
         <div tabindex="0" role="button" class="btn btn-ghost btn-sm btn-circle" title="Change Theme">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
