@@ -344,6 +344,25 @@
           {/if}
         </div>
 
+        <!-- Hardware Info -->
+        {#if usb.hardware_serial || usb.hardware_model || usb.capacity_gb}
+          <div class="divider">Hardware Info</div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <span class="text-base-content/60 text-sm">Hardware Model</span>
+              <p class="font-medium">{usb.hardware_model || '-'}</p>
+            </div>
+            <div>
+              <span class="text-base-content/60 text-sm">Hardware Serial</span>
+              <p class="font-medium font-mono">{usb.hardware_serial || '-'}</p>
+            </div>
+            <div>
+              <span class="text-base-content/60 text-sm">Capacity</span>
+              <p class="font-medium">{usb.capacity_gb ? `${usb.capacity_gb} GB` : '-'}</p>
+            </div>
+          </div>
+        {/if}
+
         <!-- Quick Status Actions -->
         <div class="divider"></div>
         <div class="flex flex-wrap gap-2">

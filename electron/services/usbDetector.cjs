@@ -1,5 +1,8 @@
 const { exec } = require('child_process');
 const { promisify } = require('util');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const execAsync = promisify(exec);
 
 /**
@@ -76,7 +79,7 @@ async function detectUSBDrivesWithStatus(db) {
 }
 
 /**
- * Format a USB drive by disk index
+ * Format a USB drive by disk index using Windows diskpart
  * WARNING: This destroys all data on the drive!
  * @param {number} diskIndex - The disk index to format
  * @param {string} label - Volume label (default: 'USB')
@@ -94,48 +97,52 @@ async function formatUSBDrive(diskIndex, label = 'USB', fileSystem = 'exFAT') {
     throw new Error(`Invalid file system. Must be one of: ${validFileSystems.join(', ')}`);
   }
 
-  // Sanitize label (remove special characters, max 11 chars for FAT32)
+  // Sanitize label (remove special characters, max 11 chars for FAT32/exFAT)
   const safeLabel = label.replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 11) || 'USB';
 
-  // PowerShell script to format the drive
-  // 1. Clear-Disk removes all partitions
-  // 2. New-Partition creates a single partition using all space
-  // 3. Format-Volume formats with the specified file system
-  const psScript = `
-    $ErrorActionPreference = 'Stop'
-    try {
-      # Clear the disk (removes all partitions and data)
-      Clear-Disk -Number ${diskIndex} -RemoveData -RemoveOEM -Confirm:$false
+  // Create diskpart script
+  const diskpartScript = [
+    `select disk ${diskIndex}`,
+    'clean',
+    'create partition primary',
+    `format fs=${fileSystem} label="${safeLabel}" quick`,
+    'assign'
+  ].join('\n');
 
-      # Initialize as MBR (better compatibility for USB drives)
-      Initialize-Disk -Number ${diskIndex} -PartitionStyle MBR
-
-      # Create a new partition using all available space and assign a drive letter
-      $partition = New-Partition -DiskNumber ${diskIndex} -UseMaximumSize -AssignDriveLetter
-
-      # Format the partition
-      Format-Volume -Partition $partition -FileSystem ${fileSystem} -NewFileSystemLabel '${safeLabel}' -Confirm:$false
-
-      Write-Output "SUCCESS: Drive formatted as ${fileSystem} with label '${safeLabel}'"
-    } catch {
-      Write-Error $_.Exception.Message
-      exit 1
-    }
-  `;
+  // Write script to temp file
+  const scriptPath = path.join(os.tmpdir(), `diskpart_${Date.now()}.txt`);
 
   try {
+    fs.writeFileSync(scriptPath, diskpartScript);
+
     const { stdout, stderr } = await execAsync(
-      `powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`,
+      `diskpart /s "${scriptPath}"`,
       { timeout: 120000 } // 2 minute timeout
     );
 
-    if (stderr && !stdout.includes('SUCCESS')) {
-      throw new Error(stderr);
+    // Check for success indicators in output
+    const output = stdout.toLowerCase();
+    if (output.includes('diskpart succeeded') || output.includes('successfully formatted')) {
+      return { success: true, message: `Drive formatted successfully as ${fileSystem}` };
+    }
+
+    // Check for errors
+    if (stderr || output.includes('error') || output.includes('failed')) {
+      throw new Error(stderr || stdout);
     }
 
     return { success: true, message: `Drive formatted successfully as ${fileSystem}` };
   } catch (error) {
     throw new Error(`Format failed: ${error.message}`);
+  } finally {
+    // Cleanup temp script file
+    try {
+      if (fs.existsSync(scriptPath)) {
+        fs.unlinkSync(scriptPath);
+      }
+    } catch (e) {
+      // Ignore cleanup errors
+    }
   }
 }
 

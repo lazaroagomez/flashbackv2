@@ -8,7 +8,6 @@
   import UsbDriveList from './views/usb-drives/UsbDriveList.svelte';
   import UsbDriveDetail from './views/usb-drives/UsbDriveDetail.svelte';
   import UsbDriveCreate from './views/usb-drives/UsbDriveCreate.svelte';
-  import UsbDriveCreateSeries from './views/usb-drives/UsbDriveCreateSeries.svelte';
   import TechnicianList from './views/technicians/TechnicianList.svelte';
   import TechnicianDetail from './views/technicians/TechnicianDetail.svelte';
   import PlatformList from './views/platforms/PlatformList.svelte';
@@ -38,8 +37,6 @@
       <UsbDriveDetail id={navigation.viewParams.id} {navigate} />
     {:else if navigation.currentView === 'usb-drive-create'}
       <UsbDriveCreate {navigate} prefill={navigation.viewParams.prefill} />
-    {:else if navigation.currentView === 'usb-drive-create-series'}
-      <UsbDriveCreateSeries {navigate} />
     {:else if navigation.currentView === 'technicians'}
       <TechnicianList {navigate} />
     {:else if navigation.currentView === 'technician-detail'}

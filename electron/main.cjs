@@ -565,6 +565,15 @@ ipcMain.handle('usb:detect', async () => {
   }
 });
 
+// Format a USB drive (WARNING: destroys all data!)
+ipcMain.handle('usb:format', async (event, diskIndex, label, fileSystem) => {
+  try {
+    return await usbDetector.formatUSBDrive(diskIndex, label, fileSystem);
+  } catch (error) {
+    throw new Error(error.message);
+  }
+});
+
 // Bulk register detected USB drives with hardware info
 ipcMain.handle('usb:bulkRegister', async (event, commonData, hardwareList, username) => {
   return database.withTransaction(async (connection) => {

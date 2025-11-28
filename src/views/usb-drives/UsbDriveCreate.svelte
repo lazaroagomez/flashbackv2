@@ -14,6 +14,11 @@
   let loading = $state(true);
   let saving = $state(false);
 
+  // Connected drives for auto-populate
+  let connectedDrives = $state([]);
+  let loadingDrives = $state(false);
+  let showDriveSelector = $state(false);
+
   let formData = $state({
     platform_id: null,
     usb_type_id: null,
@@ -42,6 +47,33 @@
     } finally {
       loading = false;
     }
+  }
+
+  async function loadConnectedDrives() {
+    loadingDrives = true;
+    try {
+      const drives = await api.detectUsbDevices();
+      // Filter to only unregistered drives with serial numbers
+      connectedDrives = drives.filter(d => !d.isRegistered && d.serial);
+    } catch (e) {
+      showError('Failed to detect connected drives');
+      connectedDrives = [];
+    } finally {
+      loadingDrives = false;
+    }
+  }
+
+  function selectConnectedDrive(drive) {
+    formData.hardware_model = drive.model;
+    formData.hardware_serial = drive.serial;
+    formData.capacity_gb = drive.sizeGB;
+    showDriveSelector = false;
+  }
+
+  function clearHardwareInfo() {
+    formData.hardware_model = '';
+    formData.hardware_serial = '';
+    formData.capacity_gb = null;
   }
 
   async function loadUsbTypes() {
@@ -292,23 +324,84 @@
               />
             </div>
 
-            {#if formData.hardware_serial}
-              <div class="divider">Hardware Info</div>
-              <div class="grid grid-cols-2 gap-4">
-                <div class="form-control">
-                  <label class="label"><span class="label-text">Model</span></label>
-                  <input type="text" class="input input-bordered bg-base-200" value={formData.hardware_model} readonly />
+            <div class="divider">Hardware Info</div>
+            <div class="flex justify-between items-center mb-2">
+              <span class="text-sm text-base-content/60">Physical drive details</span>
+              <div class="flex gap-2">
+                <div class="dropdown dropdown-end">
+                  <button
+                    type="button"
+                    class="btn btn-outline btn-sm gap-1"
+                    onclick={() => { showDriveSelector = !showDriveSelector; if (!showDriveSelector === false) loadConnectedDrives(); }}
+                    onfocus={() => loadConnectedDrives()}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l-3-3m3 3l3-3" />
+                    </svg>
+                    Auto-populate
+                  </button>
+                  {#if showDriveSelector}
+                    <div class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-80 mt-1">
+                      {#if loadingDrives}
+                        <div class="flex justify-center py-4">
+                          <span class="loading loading-spinner loading-sm"></span>
+                        </div>
+                      {:else if connectedDrives.length === 0}
+                        <p class="text-sm text-base-content/50 p-2">No unregistered drives detected</p>
+                      {:else}
+                        {#each connectedDrives as drive}
+                          <button
+                            type="button"
+                            class="btn btn-ghost btn-sm justify-start text-left h-auto py-2"
+                            onclick={() => selectConnectedDrive(drive)}
+                          >
+                            <div>
+                              <div class="font-medium">{drive.model}</div>
+                              <div class="text-xs text-base-content/60 font-mono">{drive.serial} • {drive.sizeGB} GB</div>
+                            </div>
+                          </button>
+                        {/each}
+                      {/if}
+                    </div>
+                  {/if}
                 </div>
-                <div class="form-control">
-                  <label class="label"><span class="label-text">Serial</span></label>
-                  <input type="text" class="input input-bordered bg-base-200 font-mono" value={formData.hardware_serial} readonly />
-                </div>
-                <div class="form-control">
-                  <label class="label"><span class="label-text">Capacity (GB)</span></label>
-                  <input type="text" class="input input-bordered bg-base-200" value={formData.capacity_gb} readonly />
-                </div>
+                {#if formData.hardware_serial}
+                  <button type="button" class="btn btn-ghost btn-sm" onclick={clearHardwareInfo}>
+                    Clear
+                  </button>
+                {/if}
               </div>
-            {/if}
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div class="form-control">
+                <label class="label"><span class="label-text">Hardware Model</span></label>
+                <input
+                  type="text"
+                  class="input input-bordered"
+                  bind:value={formData.hardware_model}
+                  placeholder="e.g., SanDisk Ultra"
+                />
+              </div>
+              <div class="form-control">
+                <label class="label"><span class="label-text">Hardware Serial</span></label>
+                <input
+                  type="text"
+                  class="input input-bordered font-mono"
+                  bind:value={formData.hardware_serial}
+                  placeholder="e.g., 4C530001234567"
+                />
+              </div>
+              <div class="form-control">
+                <label class="label"><span class="label-text">Capacity (GB)</span></label>
+                <input
+                  type="number"
+                  class="input input-bordered"
+                  bind:value={formData.capacity_gb}
+                  placeholder="e.g., 32"
+                  step="0.01"
+                />
+              </div>
+            </div>
 
             <div class="form-control mt-6">
               <button class="btn btn-primary" type="submit" disabled={saving}>
