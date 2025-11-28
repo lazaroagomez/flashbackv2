@@ -42,7 +42,6 @@
   const statusOptions = [
     { id: 'assigned', name: 'Assigned' },
     { id: 'pending_update', name: 'Pending Update' },
-    { id: 'damaged', name: 'Damaged' },
     { id: 'lost', name: 'Lost' },
     { id: 'retired', name: 'Retired' }
   ];

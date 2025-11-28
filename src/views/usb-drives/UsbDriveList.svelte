@@ -18,6 +18,10 @@
   let selected = $state([]);
   let showBulkEdit = $state(false);
 
+  // Pagination
+  const ITEMS_PER_PAGE = 50;
+  let currentPage = $state(1);
+
   // Filters
   let search = $state('');
   let filterPlatform = $state(null);
@@ -53,6 +57,7 @@
       if (filterStatus) filters.status = filterStatus;
 
       usbDrives = await api.getUsbDrives(filters);
+      currentPage = 1; // Reset to first page on new search
     } catch (e) {
       showError('Failed to load USB drives');
     } finally {
@@ -68,7 +73,6 @@
   const statusOptions = [
     { id: 'assigned', name: 'Assigned' },
     { id: 'pending_update', name: 'Pending Update' },
-    { id: 'damaged', name: 'Damaged' },
     { id: 'lost', name: 'Lost' },
     { id: 'retired', name: 'Retired' }
   ];
@@ -123,10 +127,12 @@
   }
 
   function toggleSelectAll() {
-    if (selected.length === usbDrives.length) {
-      selected = [];
+    const pageIds = paginatedDrives.map(u => u.id);
+    const allPageSelected = pageIds.every(id => selected.includes(id));
+    if (allPageSelected) {
+      selected = selected.filter(id => !pageIds.includes(id));
     } else {
-      selected = usbDrives.map(u => u.id);
+      selected = [...new Set([...selected, ...pageIds])];
     }
   }
 
@@ -166,6 +172,19 @@
   const hasActiveFilters = $derived(
     search || filterPlatform || filterType || filterModel || filterTechnician || filterStatus
   );
+
+  // Pagination derived values
+  const totalPages = $derived(Math.ceil(usbDrives.length / ITEMS_PER_PAGE));
+  const paginatedDrives = $derived.by(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return usbDrives.slice(start, start + ITEMS_PER_PAGE);
+  });
+
+  function goToPage(page) {
+    if (page >= 1 && page <= totalPages) {
+      currentPage = page;
+    }
+  }
 
   $effect(() => {
     loadReferenceData();
@@ -302,7 +321,7 @@
                   <input
                     type="checkbox"
                     class="checkbox checkbox-sm"
-                    checked={selected.length === usbDrives.length}
+                    checked={paginatedDrives.length > 0 && paginatedDrives.every(u => selected.includes(u.id))}
                     onchange={toggleSelectAll}
                   />
                 </th>
@@ -317,7 +336,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each usbDrives as usb}
+              {#each paginatedDrives as usb}
                 <tr
                   class="hover cursor-pointer"
                   class:bg-primary={selected.includes(usb.id)}
@@ -363,9 +382,46 @@
             </tbody>
           </table>
         </div>
-        <div class="text-sm text-base-content/50 mt-2 flex justify-between">
-          <span>Showing {usbDrives.length} USB drive(s)</span>
-          <span class="opacity-60">Ctrl+click to multi-select</span>
+        <div class="flex justify-between items-center mt-4">
+          <div class="text-sm text-base-content/50">
+            Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, usbDrives.length)} of {usbDrives.length} USB drive(s)
+            <span class="ml-4 opacity-60">Ctrl+click to multi-select</span>
+          </div>
+          {#if totalPages > 1}
+            <div class="join">
+              <button
+                class="join-item btn btn-sm"
+                disabled={currentPage === 1}
+                onclick={() => goToPage(1)}
+              >
+                «
+              </button>
+              <button
+                class="join-item btn btn-sm"
+                disabled={currentPage === 1}
+                onclick={() => goToPage(currentPage - 1)}
+              >
+                ‹
+              </button>
+              <button class="join-item btn btn-sm btn-disabled">
+                Page {currentPage} of {totalPages}
+              </button>
+              <button
+                class="join-item btn btn-sm"
+                disabled={currentPage === totalPages}
+                onclick={() => goToPage(currentPage + 1)}
+              >
+                ›
+              </button>
+              <button
+                class="join-item btn btn-sm"
+                disabled={currentPage === totalPages}
+                onclick={() => goToPage(totalPages)}
+              >
+                »
+              </button>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>

@@ -10,7 +10,6 @@
   const statuses = [
     { id: 'assigned', label: 'Assigned' },
     { id: 'pending_update', label: 'Pending Update' },
-    { id: 'damaged', label: 'Damaged' },
     { id: 'lost', label: 'Lost' },
     { id: 'retired', label: 'Retired' }
   ];

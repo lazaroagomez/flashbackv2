@@ -1,6 +1,7 @@
 <script>
   import { session } from './lib/stores/session.svelte.js';
   import { navigation, navigate } from './lib/stores/navigation.svelte.js';
+  import { applyTheme } from './lib/stores/theme.svelte.js';
   import Layout from './lib/components/Layout.svelte';
   import Login from './views/Login.svelte';
   import Dashboard from './views/Dashboard.svelte';

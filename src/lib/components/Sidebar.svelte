@@ -1,5 +1,6 @@
 <script>
   import { session, logout } from '../stores/session.svelte.js';
+  import { theme, setTheme, availableThemes } from '../stores/theme.svelte.js';
   import { api } from '../api.js';
 
   let { currentView, navigate } = $props();
@@ -128,7 +129,40 @@
   </nav>
 
   <!-- Footer -->
-  <div class="p-4 border-t border-base-300 text-xs text-base-content/50">
-    <p>v1.0.0</p>
+  <div class="p-4 border-t border-base-300">
+    <div class="flex items-center justify-between">
+      <span class="text-xs text-base-content/50">v1.0.1</span>
+      <div class="dropdown dropdown-top dropdown-end">
+        <div tabindex="0" role="button" class="btn btn-ghost btn-sm btn-circle" title="Change Theme">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4.098 19.902a3.75 3.75 0 005.304 0l6.401-6.402M6.75 21A3.75 3.75 0 013 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 003.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88M6.75 17.25h.008v.008H6.75v-.008z" />
+          </svg>
+        </div>
+        <ul tabindex="0" class="dropdown-content z-[100] menu p-2 shadow-lg bg-base-100 rounded-box w-52 max-h-80 overflow-y-auto flex-nowrap">
+          <li class="menu-title"><span>Light Themes</span></li>
+          {#each availableThemes.filter(t => t.type === 'light') as t}
+            <li>
+              <button
+                class:active={theme.current === t.id}
+                onclick={() => setTheme(t.id)}
+              >
+                {t.name}
+              </button>
+            </li>
+          {/each}
+          <li class="menu-title mt-2"><span>Dark Themes</span></li>
+          {#each availableThemes.filter(t => t.type === 'dark') as t}
+            <li>
+              <button
+                class:active={theme.current === t.id}
+                onclick={() => setTheme(t.id)}
+              >
+                {t.name}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    </div>
   </div>
 </aside>

@@ -35,10 +35,6 @@
   @apply badge-warning;
 }
 
-.badge-damaged {
-  @apply badge-error;
-}
-
 .badge-lost {
   @apply badge-error;
 }

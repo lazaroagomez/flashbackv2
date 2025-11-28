@@ -14,10 +14,15 @@
   let showBulkEdit = $state(false);
   let updating = $state(false);
 
+  // Pagination
+  const ITEMS_PER_PAGE = 50;
+  let currentPage = $state(1);
+
   async function loadPendingUpdates() {
     loading = true;
     try {
       pendingUpdates = await api.getPendingUpdates();
+      currentPage = 1;
     } catch (e) {
       showError('Failed to load pending updates');
     } finally {
@@ -25,10 +30,23 @@
     }
   }
 
-  // Group by technician
+  // Pagination derived values
+  const totalPages = $derived(Math.ceil(pendingUpdates.length / ITEMS_PER_PAGE));
+  const paginatedUpdates = $derived.by(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return pendingUpdates.slice(start, start + ITEMS_PER_PAGE);
+  });
+
+  function goToPage(page) {
+    if (page >= 1 && page <= totalPages) {
+      currentPage = page;
+    }
+  }
+
+  // Group by technician (uses paginated items)
   const groupedByTechnician = $derived.by(() => {
     const groups = {};
-    for (const item of pendingUpdates) {
+    for (const item of paginatedUpdates) {
       const techName = item.technician_name || 'Unassigned';
       if (!groups[techName]) {
         groups[techName] = [];
@@ -53,10 +71,12 @@
   }
 
   function toggleSelectAll() {
-    if (selected.length === pendingUpdates.length) {
-      selected = [];
+    const pageIds = paginatedUpdates.map(u => u.id);
+    const allPageSelected = pageIds.every(id => selected.includes(id));
+    if (allPageSelected) {
+      selected = selected.filter(id => !pageIds.includes(id));
     } else {
-      selected = pendingUpdates.map(u => u.id);
+      selected = [...new Set([...selected, ...pageIds])];
     }
   }
 
@@ -175,11 +195,11 @@
             <input
               type="checkbox"
               class="checkbox"
-              checked={selected.length === pendingUpdates.length}
+              checked={paginatedUpdates.length > 0 && paginatedUpdates.every(u => selected.includes(u.id))}
               onchange={toggleSelectAll}
             />
             <span class="text-sm">
-              {selected.length > 0 ? `${selected.length} selected` : 'Select all'}
+              {selected.length > 0 ? `${selected.length} selected` : 'Select page'}
             </span>
           </div>
 
@@ -282,9 +302,46 @@
       </div>
     {/each}
 
-    <div class="text-sm text-base-content/50 flex justify-between">
-      <span>Total: {pendingUpdates.length} USB drive(s) pending update</span>
-      <span class="opacity-60">Ctrl+click to multi-select</span>
+    <div class="flex justify-between items-center">
+      <div class="text-sm text-base-content/50">
+        Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, pendingUpdates.length)} of {pendingUpdates.length} pending update(s)
+        <span class="ml-4 opacity-60">Ctrl+click to multi-select</span>
+      </div>
+      {#if totalPages > 1}
+        <div class="join">
+          <button
+            class="join-item btn btn-sm"
+            disabled={currentPage === 1}
+            onclick={() => goToPage(1)}
+          >
+            «
+          </button>
+          <button
+            class="join-item btn btn-sm"
+            disabled={currentPage === 1}
+            onclick={() => goToPage(currentPage - 1)}
+          >
+            ‹
+          </button>
+          <button class="join-item btn btn-sm btn-disabled">
+            Page {currentPage} of {totalPages}
+          </button>
+          <button
+            class="join-item btn btn-sm"
+            disabled={currentPage === totalPages}
+            onclick={() => goToPage(currentPage + 1)}
+          >
+            ›
+          </button>
+          <button
+            class="join-item btn btn-sm"
+            disabled={currentPage === totalPages}
+            onclick={() => goToPage(totalPages)}
+          >
+            »
+          </button>
+        </div>
+      {/if}
     </div>
   {/if}
 </div>

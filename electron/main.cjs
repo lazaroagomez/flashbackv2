@@ -360,7 +360,7 @@ async function handleSetCurrentVersion(versionId, usbTypeId, modelId, username =
     AND u.version_id != ?
     AND v.is_legacy_valid = FALSE
     AND v.created_at < ?
-    AND u.status NOT IN ('damaged', 'lost', 'retired')
+    AND u.status NOT IN ('lost', 'retired')
   `;
   const cascadeParams = [usbTypeId, versionId, currentVersion.created_at];
 
@@ -751,7 +751,7 @@ ipcMain.handle('usb:update', async (event, id, data, username) => {
 
     // Log status change
     if (data.status !== oldData.status) {
-      const terminalStates = ['damaged', 'lost', 'retired'];
+      const terminalStates = ['lost', 'retired'];
       const wasTerminal = terminalStates.includes(oldData.status);
       const isTerminal = terminalStates.includes(data.status);
 
