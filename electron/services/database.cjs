@@ -1,12 +1,12 @@
 const mysql = require('mysql2/promise');
 
-// Hardcoded connection config as per requirements
+// Database configuration from environment variables (with fallbacks)
 const CONFIG = {
-  host: '192.168.11.56',
-  port: 3306,
-  user: 'flashback_user',
-  password: '1234',
-  database: 'flashback_usb',
+  host: process.env.DB_HOST || '192.168.11.56',
+  port: parseInt(process.env.DB_PORT, 10) || 3306,
+  user: process.env.DB_USER || 'flashback_user',
+  password: process.env.DB_PASSWORD || '1234',
+  database: process.env.DB_NAME || 'flashback_usb',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,

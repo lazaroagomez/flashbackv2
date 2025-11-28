@@ -17,8 +17,8 @@ const {
   toPlainObject
 } = require('./services/queryHelpers.cjs');
 
-// Hardcoded password as per requirements
-const HARDCODED_PASSWORD = 'flashback2024';
+// Application password from environment variable (with fallback)
+const APP_PASSWORD = process.env.APP_PASSWORD || 'flashback2024';
 
 let mainWindow;
 
@@ -71,7 +71,7 @@ app.on('window-all-closed', () => {
 // Authentication IPC Handlers
 // =====================================================
 ipcMain.handle('auth:validate', async (event, password) => {
-  return password === HARDCODED_PASSWORD;
+  return password === APP_PASSWORD;
 });
 
 // =====================================================
