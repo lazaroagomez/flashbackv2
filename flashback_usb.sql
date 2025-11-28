@@ -74,7 +74,7 @@ CREATE TABLE `event_logs` (
   `id` bigint NOT NULL,
   `usb_id` int NOT NULL,
   `timestamp` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `event_type` enum('created','assigned','reassigned','updated','marked_pending','repurpose','damaged','lost','retired','reactivated') NOT NULL,
+  `event_type` enum('created','assigned','reassigned','updated','marked_pending','repurpose','damaged','lost','retired','reactivated','formatted','flash') NOT NULL,
   `details` text NOT NULL,
   `username` varchar(100) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;

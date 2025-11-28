@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../lib/api.js';
+  import { session } from '../../lib/stores/session.svelte.js';
   import { showSuccess, showError } from '../../lib/stores/toast.svelte.js';
   import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
 
@@ -99,7 +100,13 @@
     formatQueue = [{ ...formatDrive, status: 'formatting' }];
 
     try {
-      await api.formatUsbDrive(formatDrive.diskIndex, 'USB', 'exFAT');
+      await api.formatUsbDrive({
+        diskIndex: formatDrive.diskIndex,
+        label: formatDrive.usbId || 'USB',  // Use USB ID as label for registered drives
+        fileSystem: 'exFAT',
+        dbId: formatDrive.dbId,  // null for unregistered drives
+        username: session.username
+      });
       formatQueue = [{ ...formatDrive, status: 'done' }];
       showSuccess(`Drive "${formatDrive.model}" formatted successfully`);
     } catch (e) {
@@ -133,7 +140,13 @@
       );
 
       try {
-        await api.formatUsbDrive(formatQueue[i].diskIndex, 'USB', 'exFAT');
+        await api.formatUsbDrive({
+          diskIndex: formatQueue[i].diskIndex,
+          label: formatQueue[i].usbId || 'USB',  // Use USB ID as label for registered drives
+          fileSystem: 'exFAT',
+          dbId: formatQueue[i].dbId,  // null for unregistered drives
+          username: session.username
+        });
         formatQueue = formatQueue.map((q, idx) =>
           idx === i ? { ...q, status: 'done' } : q
         );

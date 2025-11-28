@@ -565,11 +565,59 @@ ipcMain.handle('usb:detect', async () => {
   }
 });
 
+// Helper function to build format details string for logging
+function buildFormatDetails(fileSystem, label, formatType, result, errorMsg, prevState) {
+  let details = `Format ${result}: FS=${fileSystem}, Label=${label}, Type=${formatType}`;
+  if (prevState) {
+    details += `, PrevStatus=${prevState.status}`;
+    if (prevState.technician_name) {
+      details += `, PrevTech=${prevState.technician_name}`;
+    }
+  }
+  if (errorMsg) {
+    details += `, Error=${errorMsg}`;
+  }
+  return details;
+}
+
 // Format a USB drive (WARNING: destroys all data!)
-ipcMain.handle('usb:format', async (event, diskIndex, label, fileSystem) => {
+// Accepts object: { diskIndex, label, fileSystem, dbId, username }
+ipcMain.handle('usb:format', async (event, formatData) => {
+  const { diskIndex, label, fileSystem, dbId, username } = formatData;
+
+  // Fetch previous state for registered drives (for logging)
+  let previousState = null;
+  if (dbId) {
+    previousState = await database.queryOne(`
+      SELECT u.*, tech.name as technician_name
+      FROM usb_drives u
+      LEFT JOIN technicians tech ON u.technician_id = tech.id
+      WHERE u.id = ?
+    `, [dbId]);
+  }
+
   try {
-    return await usbDetector.formatUSBDrive(diskIndex, label, fileSystem);
+    const result = await usbDetector.formatUSBDrive(diskIndex, label, fileSystem);
+
+    // Log successful format for registered drives
+    if (dbId && previousState) {
+      const details = buildFormatDetails(fileSystem, label, 'quick', 'SUCCESS', null, previousState);
+      await database.query(
+        `INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, 'formatted', ?, ?)`,
+        [dbId, details, username]
+      );
+    }
+
+    return result;
   } catch (error) {
+    // Log failed format attempt for registered drives
+    if (dbId && previousState) {
+      const details = buildFormatDetails(fileSystem, label, 'quick', 'FAILED', error.message, previousState);
+      await database.query(
+        `INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, 'formatted', ?, ?)`,
+        [dbId, details, username]
+      );
+    }
     throw new Error(error.message);
   }
 });
@@ -764,6 +812,50 @@ ipcMain.handle('eventLog:getByUsb', async (event, usbId) => {
     ORDER BY timestamp DESC
   `;
   return database.query(sql, [usbId]);
+});
+
+// =====================================================
+// Format History IPC Handlers
+// =====================================================
+ipcMain.handle('formatLog:getAll', async (event, filters = {}) => {
+  let sql = `
+    SELECT el.*, u.usb_id, u.hardware_serial, u.hardware_model, u.capacity_gb,
+           m.name as model_name
+    FROM event_logs el
+    JOIN usb_drives u ON el.usb_id = u.id
+    LEFT JOIN models m ON u.model_id = m.id
+    WHERE el.event_type = 'formatted'
+  `;
+  const params = [];
+
+  if (filters.dateFrom) {
+    sql += ' AND el.timestamp >= ?';
+    params.push(filters.dateFrom);
+  }
+  if (filters.dateTo) {
+    sql += ' AND el.timestamp <= ?';
+    params.push(filters.dateTo);
+  }
+  if (filters.username) {
+    sql += ' AND el.username LIKE ?';
+    params.push(`%${filters.username}%`);
+  }
+  if (filters.usbId) {
+    sql += ' AND u.usb_id LIKE ?';
+    params.push(`%${filters.usbId}%`);
+  }
+
+  sql += ' ORDER BY el.timestamp DESC';
+
+  return database.query(sql, params);
+});
+
+ipcMain.handle('formatLog:getByUsb', async (event, usbDriveId) => {
+  return database.query(`
+    SELECT * FROM event_logs
+    WHERE usb_id = ? AND event_type = 'formatted'
+    ORDER BY timestamp DESC
+  `, [usbDriveId]);
 });
 
 // =====================================================
