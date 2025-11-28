@@ -2,10 +2,10 @@ const mysql = require('mysql2/promise');
 
 // Hardcoded connection config as per requirements
 const CONFIG = {
-  host: 'localhost',
+  host: '192.168.11.56',
   port: 3306,
   user: 'flashback_user',
-  password: 'flashback_password',
+  password: '1234',
   database: 'flashback_usb',
   waitForConnections: true,
   connectionLimit: 10,

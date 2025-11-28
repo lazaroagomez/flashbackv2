@@ -85,11 +85,26 @@ async function drawSticker(page, usb, font, fontBold, doc) {
 
   // Version centered below the main line (USB Type - Model)
   const versionCode = usb.version_code || '';
-  const versionWidth = font.widthOfTextAtSize(versionCode, 8);
-  page.drawText(versionCode, {
+  let displayVersion = versionCode;
+  let versionFontSize = 8;
+
+  // Truncate version if too long to fit in text area
+  while (font.widthOfTextAtSize(displayVersion, versionFontSize) > maxWidth && versionFontSize > 6) {
+    versionFontSize--;
+  }
+  if (font.widthOfTextAtSize(displayVersion, versionFontSize) > maxWidth) {
+    // Still too long, truncate the text
+    while (displayVersion.length > 3 && font.widthOfTextAtSize(displayVersion + '..', versionFontSize) > maxWidth) {
+      displayVersion = displayVersion.slice(0, -1);
+    }
+    displayVersion = displayVersion + '..';
+  }
+
+  const versionWidth = font.widthOfTextAtSize(displayVersion, versionFontSize);
+  page.drawText(displayVersion, {
     x: textCenterX - versionWidth / 2,
     y: height / 2 - 12,
-    size: 8,
+    size: versionFontSize,
     font: font,
     color: rgb(0, 0, 0)
   });
