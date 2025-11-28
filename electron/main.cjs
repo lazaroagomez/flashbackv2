@@ -10,6 +10,16 @@ const pdfGenerator = require('./services/pdfGenerator.cjs');
 // Hardcoded password as per requirements
 const HARDCODED_PASSWORD = 'flashback2024';
 
+// Helper to normalize names for similarity comparison (remove spaces, lowercase)
+function normalizeName(name) {
+  return (name || '').toLowerCase().replace(/\s+/g, '');
+}
+
+// Check if two names are similar (ignoring spaces and case)
+function namesAreSimilar(name1, name2) {
+  return normalizeName(name1) === normalizeName(name2);
+}
+
 // Helper to ensure objects are IPC-serializable
 function toPlainObject(obj) {
   return JSON.parse(JSON.stringify(obj, (key, value) =>
@@ -81,6 +91,12 @@ ipcMain.handle('platform:getAll', async (event, activeOnly = false) => {
   return database.query(sql);
 });
 
+ipcMain.handle('platform:checkSimilar', async (event, name) => {
+  const platforms = await database.query('SELECT id, name FROM platforms');
+  const similar = platforms.filter(p => namesAreSimilar(p.name, name));
+  return toPlainObject(similar);
+});
+
 ipcMain.handle('platform:create', async (event, data) => {
   const sql = 'INSERT INTO platforms (name) VALUES (?)';
   const result = await database.query(sql, [data.name]);
@@ -115,6 +131,18 @@ ipcMain.handle('usbType:getAll', async (event, platformId = null, activeOnly = f
   sql += ' ORDER BY p.name, ut.name';
 
   return database.query(sql, params);
+});
+
+ipcMain.handle('usbType:checkSimilar', async (event, name, platformId = null) => {
+  let sql = 'SELECT ut.id, ut.name, p.name as platform_name FROM usb_types ut JOIN platforms p ON ut.platform_id = p.id';
+  const params = [];
+  if (platformId) {
+    sql += ' WHERE ut.platform_id = ?';
+    params.push(platformId);
+  }
+  const types = await database.query(sql, params);
+  const similar = types.filter(t => namesAreSimilar(t.name, name));
+  return toPlainObject(similar);
 });
 
 ipcMain.handle('usbType:create', async (event, data) => {
@@ -161,6 +189,12 @@ ipcMain.handle('model:getAll', async (event, activeOnly = false) => {
 ipcMain.handle('model:getOne', async (event, id) => {
   const sql = 'SELECT * FROM models WHERE id = ?';
   return database.queryOne(sql, [id]);
+});
+
+ipcMain.handle('model:checkSimilar', async (event, name) => {
+  const models = await database.query('SELECT id, name, model_number FROM models');
+  const similar = models.filter(m => namesAreSimilar(m.name, name));
+  return toPlainObject(similar);
 });
 
 ipcMain.handle('model:create', async (event, data) => {
@@ -225,6 +259,20 @@ ipcMain.handle('version:getAll', async (event, usbTypeId = null, modelId = null)
   sql += ' ORDER BY t.name, m.name, v.version_code';
 
   return database.query(sql, params);
+});
+
+ipcMain.handle('version:checkSimilar', async (event, versionCode, usbTypeId, modelId = null) => {
+  let sql = 'SELECT id, version_code FROM versions WHERE usb_type_id = ?';
+  const params = [usbTypeId];
+  if (modelId) {
+    sql += ' AND model_id = ?';
+    params.push(modelId);
+  } else {
+    sql += ' AND model_id IS NULL';
+  }
+  const versions = await database.query(sql, params);
+  const similar = versions.filter(v => namesAreSimilar(v.version_code, versionCode));
+  return toPlainObject(similar);
 });
 
 ipcMain.handle('version:create', async (event, data) => {
@@ -401,6 +449,12 @@ ipcMain.handle('technician:getAll', async (event, activeOnly = false) => {
 ipcMain.handle('technician:getOne', async (event, id) => {
   const sql = 'SELECT * FROM technicians WHERE id = ?';
   return database.queryOne(sql, [id]);
+});
+
+ipcMain.handle('technician:checkSimilar', async (event, name) => {
+  const technicians = await database.query('SELECT id, name, notes FROM technicians');
+  const similar = technicians.filter(t => namesAreSimilar(t.name, name));
+  return toPlainObject(similar);
 });
 
 ipcMain.handle('technician:create', async (event, data) => {
@@ -871,6 +925,132 @@ ipcMain.handle('pending:markUpdated', async (event, usbIds, username) => {
 
     await connection.commit();
     return toPlainObject({ success: true, count: usbIds.length });
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+});
+
+// Bulk update USB drives
+ipcMain.handle('usb:bulkUpdate', async (event, usbIds, updates, username) => {
+  const connection = await database.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    let updatedCount = 0;
+
+    for (const usbId of usbIds) {
+      // Get current state
+      const [current] = await connection.execute(
+        `SELECT u.*, tech.name as technician_name, v.version_code,
+                ut.name as usb_type_name, p.name as platform_name, m.name as model_name
+         FROM usb_drives u
+         LEFT JOIN technicians tech ON u.technician_id = tech.id
+         LEFT JOIN versions v ON u.version_id = v.id
+         LEFT JOIN usb_types ut ON u.usb_type_id = ut.id
+         LEFT JOIN platforms p ON ut.platform_id = p.id
+         LEFT JOIN models m ON u.model_id = m.id
+         WHERE u.id = ?`,
+        [usbId]
+      );
+      const oldData = current[0];
+      if (!oldData) continue;
+
+      // Build dynamic update
+      const setClauses = [];
+      const params = [];
+      const changes = [];
+
+      // Handle repurpose (platform/type/model/version change)
+      if (updates.repurpose) {
+        const repurpose = updates.repurpose;
+        setClauses.push('usb_type_id = ?', 'model_id = ?', 'version_id = ?');
+        params.push(repurpose.usb_type_id, repurpose.model_id || null, repurpose.version_id);
+
+        // Get new names for logging
+        const [newType] = await connection.execute(
+          `SELECT ut.name as type_name, p.name as platform_name
+           FROM usb_types ut JOIN platforms p ON ut.platform_id = p.id
+           WHERE ut.id = ?`,
+          [repurpose.usb_type_id]
+        );
+        const [newVersion] = await connection.execute('SELECT version_code FROM versions WHERE id = ?', [repurpose.version_id]);
+        let newModelName = null;
+        if (repurpose.model_id) {
+          const [newModel] = await connection.execute('SELECT name FROM models WHERE id = ?', [repurpose.model_id]);
+          newModelName = newModel[0]?.name;
+        }
+
+        const oldDesc = `${oldData.platform_name} ${oldData.usb_type_name}${oldData.model_name ? ' - ' + oldData.model_name : ''} (${oldData.version_code})`;
+        const newDesc = `${newType[0]?.platform_name} ${newType[0]?.type_name}${newModelName ? ' - ' + newModelName : ''} (${newVersion[0]?.version_code})`;
+        changes.push({ type: 'repurpose', detail: `Repurposed from ${oldDesc} to ${newDesc}` });
+      }
+
+      // Handle version-only change (not repurpose)
+      if ('version_id' in updates && !updates.repurpose && updates.version_id !== oldData.version_id) {
+        setClauses.push('version_id = ?');
+        params.push(updates.version_id);
+        const [newVersion] = await connection.execute('SELECT version_code FROM versions WHERE id = ?', [updates.version_id]);
+        changes.push({ type: 'updated', detail: `Version changed from ${oldData.version_code} to ${newVersion[0]?.version_code}` });
+      }
+
+      if ('technician_id' in updates) {
+        setClauses.push('technician_id = ?');
+        params.push(updates.technician_id || null);
+
+        // Track change for logging
+        if (updates.technician_id !== oldData.technician_id) {
+          if (!oldData.technician_id && updates.technician_id) {
+            const [newTech] = await connection.execute('SELECT name FROM technicians WHERE id = ?', [updates.technician_id]);
+            changes.push({ type: 'assigned', detail: `Assigned to technician: ${newTech[0]?.name || 'Unknown'}` });
+          } else if (oldData.technician_id && !updates.technician_id) {
+            changes.push({ type: 'updated', detail: `Unassigned from technician: ${oldData.technician_name}` });
+          } else if (oldData.technician_id && updates.technician_id) {
+            const [newTech] = await connection.execute('SELECT name FROM technicians WHERE id = ?', [updates.technician_id]);
+            changes.push({ type: 'reassigned', detail: `Reassigned from ${oldData.technician_name} to ${newTech[0]?.name || 'Unknown'}` });
+          }
+        }
+      }
+
+      if ('status' in updates && updates.status !== oldData.status) {
+        setClauses.push('status = ?');
+        params.push(updates.status);
+        changes.push({ type: 'updated', detail: `Status changed from ${oldData.status} to ${updates.status}` });
+      }
+
+      if ('custom_text' in updates) {
+        setClauses.push('custom_text = ?');
+        params.push(updates.custom_text || null);
+        if (updates.custom_text !== oldData.custom_text) {
+          changes.push({ type: 'updated', detail: `Custom text changed` });
+        }
+      }
+
+      if (setClauses.length === 0) continue;
+
+      // Execute update
+      params.push(usbId);
+      await connection.execute(
+        `UPDATE usb_drives SET ${setClauses.join(', ')} WHERE id = ?`,
+        params
+      );
+
+      // Log changes
+      for (const change of changes) {
+        await connection.execute(
+          'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
+          [usbId, change.type, `[Bulk Edit] ${change.detail}`, username]
+        );
+      }
+
+      updatedCount++;
+    }
+
+    await connection.commit();
+    return toPlainObject({ success: true, updated: updatedCount });
   } catch (error) {
     await connection.rollback();
     throw error;

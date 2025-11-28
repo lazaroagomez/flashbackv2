@@ -5,6 +5,7 @@
   import TechnicianWarning from '../../lib/components/TechnicianWarning.svelte';
   import SearchBar from '../../lib/components/SearchBar.svelte';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
+  import BulkEditModal from '../../lib/components/BulkEditModal.svelte';
 
   let { navigate } = $props();
 
@@ -15,6 +16,7 @@
   let technicians = $state([]);
   let loading = $state(true);
   let selected = $state([]);
+  let showBulkEdit = $state(false);
 
   // Filters
   let search = $state('');
@@ -141,6 +143,11 @@
     }
   }
 
+  function handleBulkEditComplete() {
+    selected = [];
+    loadUsbDrives();
+  }
+
   function handleRowClick(usb, event) {
     // Ctrl+click for multi-select
     if (event.ctrlKey || event.metaKey) {
@@ -259,6 +266,12 @@
       {#if selected.length > 0}
         <div class="flex items-center gap-4 mb-4 p-2 bg-base-200 rounded">
           <span>{selected.length} selected</span>
+          <button class="btn btn-sm btn-primary" onclick={() => showBulkEdit = true}>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            Bulk Edit
+          </button>
           <button class="btn btn-sm btn-outline" onclick={printSelected}>
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
@@ -358,3 +371,9 @@
     </div>
   </div>
 </div>
+
+<BulkEditModal
+  bind:open={showBulkEdit}
+  selectedIds={selected}
+  onupdate={handleBulkEditComplete}
+/>

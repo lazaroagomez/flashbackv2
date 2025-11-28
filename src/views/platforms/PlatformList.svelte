@@ -2,6 +2,7 @@
   import { api } from '../../lib/api.js';
   import { showSuccess, showError } from '../../lib/stores/toast.svelte.js';
   import Modal from '../../lib/components/Modal.svelte';
+  import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
   import StatusBadge from '../../lib/components/StatusBadge.svelte';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
 
@@ -16,6 +17,10 @@
   let editingPlatform = $state(null);
   let formData = $state({ name: '', status: 'active' });
   let saving = $state(false);
+
+  // Duplicate detection
+  let showDuplicateConfirm = $state(false);
+  let similarItems = $state([]);
 
   async function loadPlatforms() {
     loading = true;
@@ -52,6 +57,20 @@
       return;
     }
 
+    // Check for duplicates only when creating
+    if (!editingPlatform) {
+      const similar = await api.checkSimilarPlatform(formData.name);
+      if (similar.length > 0) {
+        similarItems = similar;
+        showDuplicateConfirm = true;
+        return;
+      }
+    }
+
+    await doCreate();
+  }
+
+  async function doCreate() {
     saving = true;
     try {
       if (editingPlatform) {
@@ -68,6 +87,11 @@
     } finally {
       saving = false;
     }
+  }
+
+  function confirmDuplicate() {
+    showDuplicateConfirm = false;
+    doCreate();
   }
 
   $effect(() => {
@@ -167,3 +191,13 @@
     </div>
   </form>
 </Modal>
+
+<ConfirmDialog
+  open={showDuplicateConfirm}
+  title="Similar Platform Found"
+  message="A platform with a similar name already exists: {similarItems.map(s => s.name).join(', ')}. Do you still want to create '{formData.name}'?"
+  confirmText="Create Anyway"
+  confirmClass="btn-warning"
+  onconfirm={confirmDuplicate}
+  oncancel={() => showDuplicateConfirm = false}
+/>

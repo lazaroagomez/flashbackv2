@@ -2,6 +2,7 @@
   import { api } from '../../lib/api.js';
   import { showSuccess, showError } from '../../lib/stores/toast.svelte.js';
   import Modal from '../../lib/components/Modal.svelte';
+  import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
   import StatusBadge from '../../lib/components/StatusBadge.svelte';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
 
@@ -24,6 +25,10 @@
   });
   let saving = $state(false);
   let filterPlatform = $state(null);
+
+  // Duplicate detection
+  let showDuplicateConfirm = $state(false);
+  let similarItems = $state([]);
 
   async function loadData() {
     loading = true;
@@ -79,6 +84,20 @@
       return;
     }
 
+    // Check for duplicates only when creating
+    if (!editingType) {
+      const similar = await api.checkSimilarUsbType(formData.name, formData.platform_id);
+      if (similar.length > 0) {
+        similarItems = similar;
+        showDuplicateConfirm = true;
+        return;
+      }
+    }
+
+    await doCreate();
+  }
+
+  async function doCreate() {
     saving = true;
     try {
       if (editingType) {
@@ -95,6 +114,11 @@
     } finally {
       saving = false;
     }
+  }
+
+  function confirmDuplicate() {
+    showDuplicateConfirm = false;
+    doCreate();
   }
 
   function handleFilterChange(val) {
@@ -253,3 +277,13 @@
     </div>
   </form>
 </Modal>
+
+<ConfirmDialog
+  open={showDuplicateConfirm}
+  title="Similar USB Type Found"
+  message="A USB type with a similar name already exists: {similarItems.map(s => `${s.name} (${s.platform_name})`).join(', ')}. Do you still want to create '{formData.name}'?"
+  confirmText="Create Anyway"
+  confirmClass="btn-warning"
+  onconfirm={confirmDuplicate}
+  oncancel={() => showDuplicateConfirm = false}
+/>

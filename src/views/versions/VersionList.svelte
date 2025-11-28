@@ -22,8 +22,10 @@
   let showModal = $state(false);
   let showBulkModal = $state(false);
   let showConfirm = $state(false);
+  let showDuplicateConfirm = $state(false);
   let editingVersion = $state(null);
   let settingCurrentId = $state(null);
+  let similarItems = $state([]);
   let formData = $state({
     usb_type_id: null,
     model_id: null,
@@ -206,6 +208,23 @@
       return;
     }
 
+    const usbTypeId = selectedUsbType?.id || formData.usb_type_id;
+    const modelId = selectedUsbType?.requires_model ? (selectedModel?.id || formData.model_id) : null;
+
+    // Check for duplicates only when creating
+    if (!editingVersion) {
+      const similar = await api.checkSimilarVersion(formData.version_code, usbTypeId, modelId);
+      if (similar.length > 0) {
+        similarItems = similar;
+        showDuplicateConfirm = true;
+        return;
+      }
+    }
+
+    await doCreate();
+  }
+
+  async function doCreate() {
     saving = true;
     try {
       const data = {
@@ -228,6 +247,11 @@
     } finally {
       saving = false;
     }
+  }
+
+  function confirmDuplicate() {
+    showDuplicateConfirm = false;
+    doCreate();
   }
 
   function confirmSetCurrent(version) {
@@ -845,3 +869,13 @@ v128"
     </div>
   </div>
 </Modal>
+
+<ConfirmDialog
+  open={showDuplicateConfirm}
+  title="Similar Version Found"
+  message="A version with a similar code already exists: {similarItems.map(s => s.version_code).join(', ')}. Do you still want to create '{formData.version_code}'?"
+  confirmText="Create Anyway"
+  confirmClass="btn-warning"
+  onconfirm={confirmDuplicate}
+  oncancel={() => showDuplicateConfirm = false}
+/>

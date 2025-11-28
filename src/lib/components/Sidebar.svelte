@@ -37,11 +37,9 @@
     }
   }
 
-  // Load count on mount and periodically refresh
+  // Load count once on app start
   $effect(() => {
     loadPendingCount();
-    const interval = setInterval(loadPendingCount, 30000); // Refresh every 30 seconds
-    return () => clearInterval(interval);
   });
 </script>
 

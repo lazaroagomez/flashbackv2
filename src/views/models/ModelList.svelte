@@ -2,6 +2,7 @@
   import { api } from '../../lib/api.js';
   import { showSuccess, showError } from '../../lib/stores/toast.svelte.js';
   import Modal from '../../lib/components/Modal.svelte';
+  import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
   import StatusBadge from '../../lib/components/StatusBadge.svelte';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
 
@@ -26,6 +27,12 @@
   let bulkText = $state('');
   let saving = $state(false);
   let bulkParsed = $state([]);
+
+  // Duplicate detection
+  let showDuplicateConfirm = $state(false);
+  let similarItems = $state([]);
+  let pendingBulkItem = $state(null);
+  let bulkResults = $state({ created: 0, skipped: 0, failed: 0 });
 
   async function loadModels() {
     loading = true;
@@ -68,6 +75,21 @@
       return;
     }
 
+    // Check for duplicates only when creating
+    if (!editingModel) {
+      const similar = await api.checkSimilarModel(formData.name);
+      if (similar.length > 0) {
+        similarItems = similar;
+        pendingBulkItem = null;
+        showDuplicateConfirm = true;
+        return;
+      }
+    }
+
+    await doCreate();
+  }
+
+  async function doCreate() {
     saving = true;
     try {
       if (editingModel) {
@@ -83,6 +105,23 @@
       showError(e.message || 'Failed to save model');
     } finally {
       saving = false;
+    }
+  }
+
+  function confirmDuplicate() {
+    showDuplicateConfirm = false;
+    if (pendingBulkItem) {
+      continueBulkImport(true);
+    } else {
+      doCreate();
+    }
+  }
+
+  function skipDuplicate() {
+    showDuplicateConfirm = false;
+    if (pendingBulkItem) {
+      bulkResults.skipped++;
+      continueBulkImport(false);
     }
   }
 
@@ -115,6 +154,9 @@
     });
   }
 
+  let bulkQueue = $state([]);
+  let bulkIndex = $state(0);
+
   async function handleBulkSubmit() {
     const validModels = bulkParsed.filter(m => m.valid);
     if (validModels.length === 0) {
@@ -122,11 +164,27 @@
       return;
     }
 
+    bulkQueue = validModels;
+    bulkIndex = 0;
+    bulkResults = { created: 0, skipped: 0, failed: 0 };
     saving = true;
-    let created = 0;
-    let failed = 0;
+    await processBulkQueue();
+  }
 
-    for (const model of validModels) {
+  async function processBulkQueue() {
+    while (bulkIndex < bulkQueue.length) {
+      const model = bulkQueue[bulkIndex];
+
+      // Check for duplicates
+      const similar = await api.checkSimilarModel(model.name);
+      if (similar.length > 0) {
+        similarItems = similar;
+        pendingBulkItem = model;
+        showDuplicateConfirm = true;
+        return; // Wait for user decision
+      }
+
+      // No duplicate, create it
       try {
         await api.createModel({
           name: model.name,
@@ -134,18 +192,46 @@
           notes: model.notes,
           status: 'active'
         });
-        created++;
+        bulkResults.created++;
       } catch (e) {
-        failed++;
+        bulkResults.failed++;
       }
+      bulkIndex++;
     }
 
+    finishBulkImport();
+  }
+
+  async function continueBulkImport(shouldCreate) {
+    if (shouldCreate && pendingBulkItem) {
+      try {
+        await api.createModel({
+          name: pendingBulkItem.name,
+          model_number: pendingBulkItem.model_number,
+          notes: pendingBulkItem.notes,
+          status: 'active'
+        });
+        bulkResults.created++;
+      } catch (e) {
+        bulkResults.failed++;
+      }
+    }
+    pendingBulkItem = null;
+    bulkIndex++;
+    await processBulkQueue();
+  }
+
+  function finishBulkImport() {
     saving = false;
-    if (created > 0) {
-      showSuccess(`Created ${created} model(s)${failed > 0 ? `, ${failed} failed` : ''}`);
+    const { created, skipped, failed } = bulkResults;
+    if (created > 0 || skipped > 0) {
+      let msg = `Created ${created} model(s)`;
+      if (skipped > 0) msg += `, ${skipped} skipped`;
+      if (failed > 0) msg += `, ${failed} failed`;
+      showSuccess(msg);
       closeBulkModal();
       loadModels();
-    } else {
+    } else if (failed > 0) {
       showError('Failed to create any models');
     }
   }
@@ -361,3 +447,14 @@ Galaxy S24,SM-S921"
     </div>
   </div>
 </Modal>
+
+<ConfirmDialog
+  open={showDuplicateConfirm}
+  title="Similar Model Found"
+  message="A model with a similar name already exists: {similarItems.map(s => s.name + (s.model_number ? ` (${s.model_number})` : '')).join(', ')}. Do you still want to create '{pendingBulkItem?.name || formData.name}'?"
+  confirmText="Create Anyway"
+  cancelText={pendingBulkItem ? "Skip" : "Cancel"}
+  confirmClass="btn-warning"
+  onconfirm={confirmDuplicate}
+  oncancel={pendingBulkItem ? skipDuplicate : () => showDuplicateConfirm = false}
+/>

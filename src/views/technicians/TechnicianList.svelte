@@ -2,6 +2,7 @@
   import { api } from '../../lib/api.js';
   import { showSuccess, showError } from '../../lib/stores/toast.svelte.js';
   import Modal from '../../lib/components/Modal.svelte';
+  import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
   import StatusBadge from '../../lib/components/StatusBadge.svelte';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
 
@@ -21,6 +22,12 @@
   let bulkText = $state('');
   let bulkParsed = $state([]);
   let saving = $state(false);
+
+  // Duplicate detection
+  let showDuplicateConfirm = $state(false);
+  let similarItems = $state([]);
+  let pendingBulkItem = $state(null);
+  let bulkResults = $state({ created: 0, skipped: 0, failed: 0 });
 
   async function loadTechnicians() {
     loading = true;
@@ -62,6 +69,21 @@
       return;
     }
 
+    // Check for duplicates only when creating
+    if (!editingTechnician) {
+      const similar = await api.checkSimilarTechnician(formData.name);
+      if (similar.length > 0) {
+        similarItems = similar;
+        pendingBulkItem = null;
+        showDuplicateConfirm = true;
+        return;
+      }
+    }
+
+    await doCreate();
+  }
+
+  async function doCreate() {
     saving = true;
     try {
       if (editingTechnician) {
@@ -77,6 +99,23 @@
       showError(e.message || 'Failed to save technician');
     } finally {
       saving = false;
+    }
+  }
+
+  function confirmDuplicate() {
+    showDuplicateConfirm = false;
+    if (pendingBulkItem) {
+      continueBulkImport(true);
+    } else {
+      doCreate();
+    }
+  }
+
+  function skipDuplicate() {
+    showDuplicateConfirm = false;
+    if (pendingBulkItem) {
+      bulkResults.skipped++;
+      continueBulkImport(false);
     }
   }
 
@@ -108,6 +147,9 @@
     });
   }
 
+  let bulkQueue = $state([]);
+  let bulkIndex = $state(0);
+
   async function handleBulkSubmit() {
     const validTechs = bulkParsed.filter(t => t.valid);
     if (validTechs.length === 0) {
@@ -115,29 +157,72 @@
       return;
     }
 
+    bulkQueue = validTechs;
+    bulkIndex = 0;
+    bulkResults = { created: 0, skipped: 0, failed: 0 };
     saving = true;
-    let created = 0;
-    let failed = 0;
+    await processBulkQueue();
+  }
 
-    for (const tech of validTechs) {
+  async function processBulkQueue() {
+    while (bulkIndex < bulkQueue.length) {
+      const tech = bulkQueue[bulkIndex];
+
+      // Check for duplicates
+      const similar = await api.checkSimilarTechnician(tech.name);
+      if (similar.length > 0) {
+        similarItems = similar;
+        pendingBulkItem = tech;
+        showDuplicateConfirm = true;
+        return; // Wait for user decision
+      }
+
+      // No duplicate, create it
       try {
         await api.createTechnician({
           name: tech.name,
           notes: tech.notes,
           status: 'active'
         });
-        created++;
+        bulkResults.created++;
       } catch (e) {
-        failed++;
+        bulkResults.failed++;
       }
+      bulkIndex++;
     }
 
+    finishBulkImport();
+  }
+
+  async function continueBulkImport(shouldCreate) {
+    if (shouldCreate && pendingBulkItem) {
+      try {
+        await api.createTechnician({
+          name: pendingBulkItem.name,
+          notes: pendingBulkItem.notes,
+          status: 'active'
+        });
+        bulkResults.created++;
+      } catch (e) {
+        bulkResults.failed++;
+      }
+    }
+    pendingBulkItem = null;
+    bulkIndex++;
+    await processBulkQueue();
+  }
+
+  function finishBulkImport() {
     saving = false;
-    if (created > 0) {
-      showSuccess(`Created ${created} technician(s)${failed > 0 ? `, ${failed} failed` : ''}`);
+    const { created, skipped, failed } = bulkResults;
+    if (created > 0 || skipped > 0) {
+      let msg = `Created ${created} technician(s)`;
+      if (skipped > 0) msg += `, ${skipped} skipped`;
+      if (failed > 0) msg += `, ${failed} failed`;
+      showSuccess(msg);
       closeBulkModal();
       loadTechnicians();
-    } else {
+    } else if (failed > 0) {
       showError('Failed to create any technicians');
     }
   }
@@ -339,3 +424,14 @@ Bob Wilson"
     </div>
   </div>
 </Modal>
+
+<ConfirmDialog
+  open={showDuplicateConfirm}
+  title="Similar Technician Found"
+  message="A technician with a similar name already exists: {similarItems.map(s => s.name).join(', ')}. Do you still want to create '{pendingBulkItem?.name || formData.name}'?"
+  confirmText="Create Anyway"
+  cancelText={pendingBulkItem ? "Skip" : "Cancel"}
+  confirmClass="btn-warning"
+  onconfirm={confirmDuplicate}
+  oncancel={pendingBulkItem ? skipDuplicate : () => showDuplicateConfirm = false}
+/>
