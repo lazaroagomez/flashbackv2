@@ -2,28 +2,37 @@
 // Manages current view and view parameters
 // Persists navigation state to localStorage
 
-const NAV_KEY = 'flashback_navigation';
+import { loadFromStorage, saveToStorage, STORAGE_KEYS } from '../utils/localStorage.js';
+
+// Validator for navigation data - don't restore detail views
+function validateNavigation(data) {
+  if (!data || !data.currentView) return false;
+  // Don't restore detail views with params (they may be stale)
+  return !data.currentView.includes('-detail');
+}
+
+// Transform for detail views - go to parent list
+function transformNavigation(data) {
+  if (data?.currentView?.includes('-detail')) {
+    return {
+      currentView: data.currentView.replace('-detail', 's'),
+      viewParams: {}
+    };
+  }
+  return data;
+}
 
 // Initialize from localStorage
 function getInitialState() {
-  try {
-    const stored = localStorage.getItem(NAV_KEY);
-    if (stored) {
-      const data = JSON.parse(stored);
-      // Don't restore detail views with params (they may be stale)
-      if (data.currentView && !data.currentView.includes('-detail')) {
-        return data;
-      }
-      // For detail views, go to the parent list view
-      if (data.currentView?.includes('-detail')) {
-        const parentView = data.currentView.replace('-detail', 's');
-        return { currentView: parentView, viewParams: {} };
-      }
-    }
-  } catch (e) {
-    console.error('Failed to restore navigation:', e);
+  const defaultState = { currentView: 'dashboard', viewParams: {} };
+  let data = loadFromStorage(STORAGE_KEYS.NAVIGATION, defaultState);
+
+  // Handle detail view transformation
+  if (data?.currentView?.includes('-detail')) {
+    data = transformNavigation(data);
   }
-  return { currentView: 'dashboard', viewParams: {} };
+
+  return data || defaultState;
 }
 
 const initialState = getInitialState();
@@ -38,14 +47,10 @@ export function navigate(view, params = {}) {
   navigation.viewParams = params;
 
   // Save to localStorage
-  try {
-    localStorage.setItem(NAV_KEY, JSON.stringify({
-      currentView: view,
-      viewParams: params
-    }));
-  } catch (e) {
-    console.error('Failed to save navigation:', e);
-  }
+  saveToStorage(STORAGE_KEYS.NAVIGATION, {
+    currentView: view,
+    viewParams: params
+  });
 }
 
 export function getCurrentView() {

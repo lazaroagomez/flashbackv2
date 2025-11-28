@@ -2,8 +2,8 @@
 // Stores authentication state and username for event logging
 // Persists session to localStorage with expiry
 
-const SESSION_KEY = 'flashback_session';
-const USERNAME_KEY = 'flashback_last_username';
+import { loadFromStorage, saveToStorage, removeFromStorage, STORAGE_KEYS } from '../utils/localStorage.js';
+
 const SESSION_HOURS = 8; // Session lasts 8 hours
 
 export const session = $state({
@@ -11,27 +11,19 @@ export const session = $state({
   username: ''
 });
 
+// Validator for session data
+function isValidSession(data) {
+  if (!data || !data.expiry || !data.username) return false;
+  return new Date(data.expiry) > new Date();
+}
+
 // Initialize from localStorage on load
 function initSession() {
-  try {
-    const stored = localStorage.getItem(SESSION_KEY);
-    if (stored) {
-      const data = JSON.parse(stored);
-      const expiry = new Date(data.expiry);
-
-      if (expiry > new Date()) {
-        // Session still valid
-        session.isAuthenticated = true;
-        session.username = data.username;
-        return true;
-      } else {
-        // Session expired, clear it
-        localStorage.removeItem(SESSION_KEY);
-      }
-    }
-  } catch (e) {
-    console.error('Failed to restore session:', e);
-    localStorage.removeItem(SESSION_KEY);
+  const data = loadFromStorage(STORAGE_KEYS.SESSION, null, isValidSession);
+  if (data) {
+    session.isAuthenticated = true;
+    session.username = data.username;
+    return true;
   }
   return false;
 }
@@ -41,24 +33,24 @@ export function login(name, rememberMe = true) {
   session.username = name;
 
   // Always save the last username
-  localStorage.setItem(USERNAME_KEY, name);
+  saveToStorage(STORAGE_KEYS.LAST_USERNAME, name);
 
   if (rememberMe) {
     // Save session with expiry
     const expiry = new Date();
     expiry.setHours(expiry.getHours() + SESSION_HOURS);
 
-    localStorage.setItem(SESSION_KEY, JSON.stringify({
+    saveToStorage(STORAGE_KEYS.SESSION, {
       username: name,
       expiry: expiry.toISOString()
-    }));
+    });
   }
 }
 
 export function logout() {
   session.isAuthenticated = false;
   session.username = '';
-  localStorage.removeItem(SESSION_KEY);
+  removeFromStorage(STORAGE_KEYS.SESSION);
   // Keep the last username for convenience
 }
 
@@ -67,7 +59,7 @@ export function getUsername() {
 }
 
 export function getLastUsername() {
-  return localStorage.getItem(USERNAME_KEY) || '';
+  return loadFromStorage(STORAGE_KEYS.LAST_USERNAME, '');
 }
 
 export function getSessionHours() {

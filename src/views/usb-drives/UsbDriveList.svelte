@@ -6,6 +6,7 @@
   import SearchBar from '../../lib/components/SearchBar.svelte';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
   import BulkEditModal from '../../lib/components/BulkEditModal.svelte';
+  import Pagination from '../../lib/components/Pagination.svelte';
 
   let { navigate } = $props();
 
@@ -387,41 +388,7 @@
             Showing {(currentPage - 1) * ITEMS_PER_PAGE + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, usbDrives.length)} of {usbDrives.length} USB drive(s)
             <span class="ml-4 opacity-60">Ctrl+click to multi-select</span>
           </div>
-          {#if totalPages > 1}
-            <div class="join">
-              <button
-                class="join-item btn btn-sm"
-                disabled={currentPage === 1}
-                onclick={() => goToPage(1)}
-              >
-                «
-              </button>
-              <button
-                class="join-item btn btn-sm"
-                disabled={currentPage === 1}
-                onclick={() => goToPage(currentPage - 1)}
-              >
-                ‹
-              </button>
-              <button class="join-item btn btn-sm btn-disabled">
-                Page {currentPage} of {totalPages}
-              </button>
-              <button
-                class="join-item btn btn-sm"
-                disabled={currentPage === totalPages}
-                onclick={() => goToPage(currentPage + 1)}
-              >
-                ›
-              </button>
-              <button
-                class="join-item btn btn-sm"
-                disabled={currentPage === totalPages}
-                onclick={() => goToPage(totalPages)}
-              >
-                »
-              </button>
-            </div>
-          {/if}
+          <Pagination {currentPage} {totalPages} onPageChange={goToPage} />
         </div>
       {/if}
     </div>

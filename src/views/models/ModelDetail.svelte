@@ -3,6 +3,7 @@
   import { showError } from '../../lib/stores/toast.svelte.js';
   import StatusBadge from '../../lib/components/StatusBadge.svelte';
   import TechnicianWarning from '../../lib/components/TechnicianWarning.svelte';
+  import BackHeader from '../../lib/components/BackHeader.svelte';
 
   let { id, navigate } = $props();
 
@@ -40,15 +41,7 @@
 </script>
 
 <div class="space-y-6">
-  <div class="flex items-center gap-4">
-    <button class="btn btn-ghost btn-sm" onclick={() => navigate('models')}>
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-      </svg>
-      Back
-    </button>
-    <h1 class="text-2xl font-bold">Model Details</h1>
-  </div>
+  <BackHeader title="Model Details" onBack={() => navigate('models')} />
 
   {#if loading}
     <div class="flex justify-center py-12">

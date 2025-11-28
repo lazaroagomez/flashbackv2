@@ -5,6 +5,8 @@
   import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
   import StatusBadge from '../../lib/components/StatusBadge.svelte';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
+  import InfoAlert from '../../lib/components/InfoAlert.svelte';
+  import { createBulkImport } from '../../lib/utils/bulkImport.svelte.js';
 
   let { navigate } = $props();
 
@@ -19,15 +21,31 @@
   let showBulkModal = $state(false);
   let editingTechnician = $state(null);
   let formData = $state({ name: '', notes: '', status: 'active' });
-  let bulkText = $state('');
-  let bulkParsed = $state([]);
   let saving = $state(false);
 
-  // Duplicate detection
-  let showDuplicateConfirm = $state(false);
-  let similarItems = $state([]);
-  let pendingBulkItem = $state(null);
-  let bulkResults = $state({ created: 0, skipped: 0, failed: 0 });
+  // Single item duplicate detection (for create modal)
+  let showSingleDuplicateConfirm = $state(false);
+  let singleSimilarItems = $state([]);
+
+  // Bulk import composable
+  const bulkImport = createBulkImport({
+    checkSimilar: (item) => api.checkSimilarTechnician(item.name),
+    createItem: (item) => api.createTechnician({ name: item.name, notes: item.notes, status: 'active' }),
+    parseItem: (line) => {
+      const parts = line.split(',').map(p => p.trim());
+      return { name: parts[0] || '', notes: parts[1] || '', valid: !!parts[0] };
+    },
+    entityName: 'technician',
+    onComplete: ({ results, message, success }) => {
+      if (success) {
+        showSuccess(message);
+        closeBulkModal();
+        loadTechnicians();
+      } else if (results.failed > 0) {
+        showError(message || 'Failed to create any technicians');
+      }
+    }
+  });
 
   async function loadTechnicians() {
     loading = true;
@@ -49,11 +67,7 @@
   function openEditModal(tech, e) {
     e.stopPropagation();
     editingTechnician = tech;
-    formData = {
-      name: tech.name,
-      notes: tech.notes || '',
-      status: tech.status
-    };
+    formData = { name: tech.name, notes: tech.notes || '', status: tech.status };
     showModal = true;
   }
 
@@ -73,9 +87,8 @@
     if (!editingTechnician) {
       const similar = await api.checkSimilarTechnician(formData.name);
       if (similar.length > 0) {
-        similarItems = similar;
-        pendingBulkItem = null;
-        showDuplicateConfirm = true;
+        singleSimilarItems = similar;
+        showSingleDuplicateConfirm = true;
         return;
       }
     }
@@ -102,21 +115,9 @@
     }
   }
 
-  function confirmDuplicate() {
-    showDuplicateConfirm = false;
-    if (pendingBulkItem) {
-      continueBulkImport(true);
-    } else {
-      doCreate();
-    }
-  }
-
-  function skipDuplicate() {
-    showDuplicateConfirm = false;
-    if (pendingBulkItem) {
-      bulkResults.skipped++;
-      continueBulkImport(false);
-    }
+  function confirmSingleDuplicate() {
+    showSingleDuplicateConfirm = false;
+    doCreate();
   }
 
   function viewDetail(tech) {
@@ -124,115 +125,26 @@
   }
 
   function openBulkModal() {
-    bulkText = '';
-    bulkParsed = [];
+    bulkImport.reset();
     showBulkModal = true;
   }
 
   function closeBulkModal() {
     showBulkModal = false;
-    bulkText = '';
-    bulkParsed = [];
+    bulkImport.reset();
   }
-
-  function parseBulkText() {
-    const lines = bulkText.split('\n').filter(line => line.trim());
-    bulkParsed = lines.map(line => {
-      const parts = line.split(',').map(p => p.trim());
-      return {
-        name: parts[0] || '',
-        notes: parts[1] || '',
-        valid: !!parts[0]
-      };
-    });
-  }
-
-  let bulkQueue = $state([]);
-  let bulkIndex = $state(0);
 
   async function handleBulkSubmit() {
-    const validTechs = bulkParsed.filter(t => t.valid);
-    if (validTechs.length === 0) {
-      showError('No valid technicians to import');
-      return;
-    }
-
-    bulkQueue = validTechs;
-    bulkIndex = 0;
-    bulkResults = { created: 0, skipped: 0, failed: 0 };
-    saving = true;
-    await processBulkQueue();
-  }
-
-  async function processBulkQueue() {
-    while (bulkIndex < bulkQueue.length) {
-      const tech = bulkQueue[bulkIndex];
-
-      // Check for duplicates
-      const similar = await api.checkSimilarTechnician(tech.name);
-      if (similar.length > 0) {
-        similarItems = similar;
-        pendingBulkItem = tech;
-        showDuplicateConfirm = true;
-        return; // Wait for user decision
-      }
-
-      // No duplicate, create it
-      try {
-        await api.createTechnician({
-          name: tech.name,
-          notes: tech.notes,
-          status: 'active'
-        });
-        bulkResults.created++;
-      } catch (e) {
-        bulkResults.failed++;
-      }
-      bulkIndex++;
-    }
-
-    finishBulkImport();
-  }
-
-  async function continueBulkImport(shouldCreate) {
-    if (shouldCreate && pendingBulkItem) {
-      try {
-        await api.createTechnician({
-          name: pendingBulkItem.name,
-          notes: pendingBulkItem.notes,
-          status: 'active'
-        });
-        bulkResults.created++;
-      } catch (e) {
-        bulkResults.failed++;
-      }
-    }
-    pendingBulkItem = null;
-    bulkIndex++;
-    await processBulkQueue();
-  }
-
-  function finishBulkImport() {
-    saving = false;
-    const { created, skipped, failed } = bulkResults;
-    if (created > 0 || skipped > 0) {
-      let msg = `Created ${created} technician(s)`;
-      if (skipped > 0) msg += `, ${skipped} skipped`;
-      if (failed > 0) msg += `, ${failed} failed`;
-      showSuccess(msg);
-      closeBulkModal();
-      loadTechnicians();
-    } else if (failed > 0) {
-      showError('Failed to create any technicians');
+    const result = await bulkImport.startImport();
+    if (!result.success) {
+      showError(result.message);
     }
   }
 
   // Parse bulk text when it changes
   $effect(() => {
-    if (bulkText) {
-      parseBulkText();
-    } else {
-      bulkParsed = [];
+    if (bulkImport.bulkText) {
+      bulkImport.parseBulkText();
     }
   });
 
@@ -376,7 +288,7 @@
       </label>
       <textarea
         class="textarea textarea-bordered font-mono text-sm"
-        bind:value={bulkText}
+        bind:value={bulkImport.bulkText}
         placeholder="John Smith,Senior technician
 Jane Doe,New hire
 Bob Wilson"
@@ -384,9 +296,9 @@ Bob Wilson"
       ></textarea>
     </div>
 
-    {#if bulkParsed.length > 0}
+    {#if bulkImport.bulkParsed.length > 0}
       <div class="bg-base-200 rounded-lg p-3">
-        <p class="font-semibold mb-2">Preview ({bulkParsed.filter(t => t.valid).length} valid):</p>
+        <p class="font-semibold mb-2">Preview ({bulkImport.bulkParsed.filter(t => t.valid).length} valid):</p>
         <div class="max-h-40 overflow-auto">
           <table class="table table-xs">
             <thead>
@@ -396,7 +308,7 @@ Bob Wilson"
               </tr>
             </thead>
             <tbody>
-              {#each bulkParsed as item}
+              {#each bulkImport.bulkParsed as item}
                 <tr class:text-error={!item.valid} class:opacity-50={!item.valid}>
                   <td>{item.name || '(empty)'}</td>
                   <td class="max-w-xs truncate">{item.notes || '-'}</td>
@@ -413,25 +325,38 @@ Bob Wilson"
       <button
         type="button"
         class="btn btn-primary"
-        disabled={saving || bulkParsed.filter(t => t.valid).length === 0}
+        disabled={bulkImport.saving || bulkImport.bulkParsed.filter(t => t.valid).length === 0}
         onclick={handleBulkSubmit}
       >
-        {#if saving}
+        {#if bulkImport.saving}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}
-        Import {bulkParsed.filter(t => t.valid).length} Technician(s)
+        Import {bulkImport.bulkParsed.filter(t => t.valid).length} Technician(s)
       </button>
     </div>
   </div>
 </Modal>
 
+<!-- Single item duplicate confirmation -->
 <ConfirmDialog
-  open={showDuplicateConfirm}
+  open={showSingleDuplicateConfirm}
   title="Similar Technician Found"
-  message="A technician with a similar name already exists: {similarItems.map(s => s.name).join(', ')}. Do you still want to create '{pendingBulkItem?.name || formData.name}'?"
+  message="A technician with a similar name already exists: {singleSimilarItems.map(s => s.name).join(', ')}. Do you still want to create '{formData.name}'?"
   confirmText="Create Anyway"
-  cancelText={pendingBulkItem ? "Skip" : "Cancel"}
+  cancelText="Cancel"
   confirmClass="btn-warning"
-  onconfirm={confirmDuplicate}
-  oncancel={pendingBulkItem ? skipDuplicate : () => showDuplicateConfirm = false}
+  onconfirm={confirmSingleDuplicate}
+  oncancel={() => showSingleDuplicateConfirm = false}
+/>
+
+<!-- Bulk import duplicate confirmation -->
+<ConfirmDialog
+  open={bulkImport.showDuplicateConfirm}
+  title="Similar Technician Found"
+  message="A technician with a similar name already exists: {bulkImport.similarItems.map(s => s.name).join(', ')}. Do you still want to create '{bulkImport.pendingBulkItem?.name}'?"
+  confirmText="Create Anyway"
+  cancelText="Skip"
+  confirmClass="btn-warning"
+  onconfirm={bulkImport.confirmDuplicate}
+  oncancel={bulkImport.skipDuplicate}
 />

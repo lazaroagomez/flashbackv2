@@ -1,8 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find:*)",
-      "Bash(ls -la \"c:\\Users\\lazar\\OneDrive\\Desktop\\uscs\\flashback\\src\"\" 2>/dev/null || echo \"Windows path needed \")"
+      "Bash(dir:*)",
+      "Bash(npm run build:*)"
     ],
     "deny": [],
     "ask": []

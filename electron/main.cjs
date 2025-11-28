@@ -6,26 +6,18 @@ const fs = require('fs');
 const database = require('./services/database.cjs');
 const usbIdGenerator = require('./services/usbIdGenerator.cjs');
 const pdfGenerator = require('./services/pdfGenerator.cjs');
+const eventLogger = require('./services/eventLogger.cjs');
+const { createCrudHandlers, registerCrudHandlers } = require('./services/crudFactory.cjs');
+const {
+  appendModelIdCondition,
+  USB_DRIVE_BASE_SELECT,
+  USB_STICKER_SELECT,
+  namesAreSimilar,
+  toPlainObject
+} = require('./services/queryHelpers.cjs');
 
 // Hardcoded password as per requirements
 const HARDCODED_PASSWORD = 'flashback2024';
-
-// Helper to normalize names for similarity comparison (remove spaces, lowercase)
-function normalizeName(name) {
-  return (name || '').toLowerCase().replace(/\s+/g, '');
-}
-
-// Check if two names are similar (ignoring spaces and case)
-function namesAreSimilar(name1, name2) {
-  return normalizeName(name1) === normalizeName(name2);
-}
-
-// Helper to ensure objects are IPC-serializable
-function toPlainObject(obj) {
-  return JSON.parse(JSON.stringify(obj, (key, value) =>
-    typeof value === 'bigint' ? Number(value) : value
-  ));
-}
 
 let mainWindow;
 
@@ -82,32 +74,15 @@ ipcMain.handle('auth:validate', async (event, password) => {
 });
 
 // =====================================================
-// Platform IPC Handlers
+// Platform IPC Handlers (using CRUD factory)
 // =====================================================
-ipcMain.handle('platform:getAll', async (event, activeOnly = false) => {
-  let sql = 'SELECT * FROM platforms';
-  if (activeOnly) sql += " WHERE status = 'active'";
-  sql += ' ORDER BY name';
-  return database.query(sql);
+const platformHandlers = createCrudHandlers({
+  tableName: 'platforms',
+  entityName: 'platform',
+  createColumns: ['name'],
+  updateColumns: ['name', 'status']
 });
-
-ipcMain.handle('platform:checkSimilar', async (event, name) => {
-  const platforms = await database.query('SELECT id, name FROM platforms');
-  const similar = platforms.filter(p => namesAreSimilar(p.name, name));
-  return toPlainObject(similar);
-});
-
-ipcMain.handle('platform:create', async (event, data) => {
-  const sql = 'INSERT INTO platforms (name) VALUES (?)';
-  const result = await database.query(sql, [data.name]);
-  return toPlainObject({ id: result.insertId, ...data });
-});
-
-ipcMain.handle('platform:update', async (event, id, data) => {
-  const sql = 'UPDATE platforms SET name = ?, status = ? WHERE id = ?';
-  await database.query(sql, [data.name, data.status, id]);
-  return toPlainObject({ id, ...data });
-});
+registerCrudHandlers(ipcMain, 'platform', platformHandlers);
 
 // =====================================================
 // USB Type IPC Handlers
@@ -177,38 +152,18 @@ ipcMain.handle('usbType:update', async (event, id, data) => {
 });
 
 // =====================================================
-// Model IPC Handlers
+// Model IPC Handlers (using CRUD factory)
 // =====================================================
-ipcMain.handle('model:getAll', async (event, activeOnly = false) => {
-  let sql = 'SELECT * FROM models';
-  if (activeOnly) sql += " WHERE status = 'active'";
-  sql += ' ORDER BY name';
-  return database.query(sql);
+const modelHandlers = createCrudHandlers({
+  tableName: 'models',
+  entityName: 'model',
+  createColumns: ['name', 'model_number', 'notes'],
+  updateColumns: ['name', 'model_number', 'notes', 'status'],
+  similarSelectColumns: ['id', 'name', 'model_number']
 });
+registerCrudHandlers(ipcMain, 'model', modelHandlers);
 
-ipcMain.handle('model:getOne', async (event, id) => {
-  const sql = 'SELECT * FROM models WHERE id = ?';
-  return database.queryOne(sql, [id]);
-});
-
-ipcMain.handle('model:checkSimilar', async (event, name) => {
-  const models = await database.query('SELECT id, name, model_number FROM models');
-  const similar = models.filter(m => namesAreSimilar(m.name, name));
-  return toPlainObject(similar);
-});
-
-ipcMain.handle('model:create', async (event, data) => {
-  const sql = 'INSERT INTO models (name, model_number, notes) VALUES (?, ?, ?)';
-  const result = await database.query(sql, [data.name, data.model_number || null, data.notes || null]);
-  return toPlainObject({ id: result.insertId, ...data });
-});
-
-ipcMain.handle('model:update', async (event, id, data) => {
-  const sql = 'UPDATE models SET name = ?, model_number = ?, notes = ?, status = ? WHERE id = ?';
-  await database.query(sql, [data.name, data.model_number, data.notes, data.status, id]);
-  return toPlainObject({ id, ...data });
-});
-
+// Custom handler for getting USB drives by model
 ipcMain.handle('model:getUsbDrives', async (event, modelId) => {
   const sql = `
     SELECT u.*,
@@ -437,38 +392,18 @@ async function handleSetCurrentVersion(versionId, usbTypeId, modelId, username =
 }
 
 // =====================================================
-// Technician IPC Handlers
+// Technician IPC Handlers (using CRUD factory)
 // =====================================================
-ipcMain.handle('technician:getAll', async (event, activeOnly = false) => {
-  let sql = 'SELECT * FROM technicians';
-  if (activeOnly) sql += " WHERE status = 'active'";
-  sql += ' ORDER BY name';
-  return database.query(sql);
+const technicianHandlers = createCrudHandlers({
+  tableName: 'technicians',
+  entityName: 'technician',
+  createColumns: ['name', 'notes'],
+  updateColumns: ['name', 'notes', 'status'],
+  similarSelectColumns: ['id', 'name', 'notes']
 });
+registerCrudHandlers(ipcMain, 'technician', technicianHandlers);
 
-ipcMain.handle('technician:getOne', async (event, id) => {
-  const sql = 'SELECT * FROM technicians WHERE id = ?';
-  return database.queryOne(sql, [id]);
-});
-
-ipcMain.handle('technician:checkSimilar', async (event, name) => {
-  const technicians = await database.query('SELECT id, name, notes FROM technicians');
-  const similar = technicians.filter(t => namesAreSimilar(t.name, name));
-  return toPlainObject(similar);
-});
-
-ipcMain.handle('technician:create', async (event, data) => {
-  const sql = 'INSERT INTO technicians (name, notes) VALUES (?, ?)';
-  const result = await database.query(sql, [data.name, data.notes || null]);
-  return toPlainObject({ id: result.insertId, ...data });
-});
-
-ipcMain.handle('technician:update', async (event, id, data) => {
-  const sql = 'UPDATE technicians SET name = ?, notes = ?, status = ? WHERE id = ?';
-  await database.query(sql, [data.name, data.notes, data.status, id]);
-  return toPlainObject({ id, ...data });
-});
-
+// Custom handler for getting USB drives by technician
 ipcMain.handle('technician:getUsbDrives', async (event, technicianId) => {
   const sql = `
     SELECT u.*,
@@ -571,11 +506,7 @@ ipcMain.handle('usb:getOne', async (event, id) => {
 });
 
 ipcMain.handle('usb:create', async (event, data, username) => {
-  const connection = await database.getConnection();
-
-  try {
-    await connection.beginTransaction();
-
+  return database.withTransaction(async (connection) => {
     // Generate USB ID
     const usbId = await usbIdGenerator.getNextId(connection);
 
@@ -589,63 +520,44 @@ ipcMain.handle('usb:create', async (event, data, username) => {
     const usbDriveId = result.insertId;
 
     // Get details for event log
-    const [typeInfo] = await connection.execute(
-      'SELECT name FROM usb_types WHERE id = ?',
-      [data.usb_type_id]
-    );
-    const [versionInfo] = await connection.execute(
-      'SELECT version_code FROM versions WHERE id = ?',
-      [data.version_id]
-    );
-
-    let modelName = '';
-    if (data.model_id) {
-      const [modelInfo] = await connection.execute(
-        'SELECT name FROM models WHERE id = ?',
-        [data.model_id]
-      );
-      modelName = modelInfo[0]?.name || '';
-    }
+    const names = await eventLogger.fetchEntityNames(connection, {
+      typeId: data.usb_type_id,
+      versionId: data.version_id,
+      modelId: data.model_id
+    });
 
     // Create 'created' event log
-    const createdDetails = modelName
-      ? `USB drive created: Type=${typeInfo[0].name}, Model=${modelName}, Version=${versionInfo[0].version_code}`
-      : `USB drive created: Type=${typeInfo[0].name}, Version=${versionInfo[0].version_code}`;
-
-    await connection.execute(
-      'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-      [usbDriveId, 'created', createdDetails, username]
+    const createdDetails = eventLogger.buildCreationDetails(
+      names.typeName,
+      names.modelName,
+      names.versionCode
     );
+    await eventLogger.logEvent(connection, usbDriveId, 'created', createdDetails, username);
 
-    // If technician assigned, create 'assigned' event log
+    // If technician assigned, log assignment
     if (data.technician_id) {
-      const [techInfo] = await connection.execute(
-        'SELECT name FROM technicians WHERE id = ?',
-        [data.technician_id]
-      );
-      await connection.execute(
-        'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-        [usbDriveId, 'assigned', `Assigned to technician: ${techInfo[0].name}`, username]
-      );
+      await eventLogger.logTechnicianChange(connection, usbDriveId, null, data.technician_id, null, username);
     }
 
-    await connection.commit();
-
     return toPlainObject({ id: usbDriveId, usb_id: usbId, ...data });
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+  });
 });
 
 ipcMain.handle('usb:createSeries', async (event, data, quantity, username) => {
-  const connection = await database.getConnection();
-  const created = [];
+  return database.withTransaction(async (connection) => {
+    const created = [];
 
-  try {
-    await connection.beginTransaction();
+    // Fetch entity names once for all drives in series
+    const names = await eventLogger.fetchEntityNames(connection, {
+      typeId: data.usb_type_id,
+      versionId: data.version_id,
+      modelId: data.model_id
+    });
+    const createdDetails = eventLogger.buildCreationDetails(
+      names.typeName,
+      names.modelName,
+      names.versionCode
+    );
 
     for (let i = 0; i < quantity; i++) {
       const usbId = await usbIdGenerator.getNextId(connection);
@@ -658,52 +570,21 @@ ipcMain.handle('usb:createSeries', async (event, data, quantity, username) => {
 
       const usbDriveId = result.insertId;
 
-      // Get details for event log
-      const [typeInfo] = await connection.execute('SELECT name FROM usb_types WHERE id = ?', [data.usb_type_id]);
-      const [versionInfo] = await connection.execute('SELECT version_code FROM versions WHERE id = ?', [data.version_id]);
-
-      let modelName = '';
-      if (data.model_id) {
-        const [modelInfo] = await connection.execute('SELECT name FROM models WHERE id = ?', [data.model_id]);
-        modelName = modelInfo[0]?.name || '';
-      }
-
-      const createdDetails = modelName
-        ? `USB drive created: Type=${typeInfo[0].name}, Model=${modelName}, Version=${versionInfo[0].version_code}`
-        : `USB drive created: Type=${typeInfo[0].name}, Version=${versionInfo[0].version_code}`;
-
-      await connection.execute(
-        'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-        [usbDriveId, 'created', createdDetails, username]
-      );
+      await eventLogger.logEvent(connection, usbDriveId, 'created', createdDetails, username);
 
       if (data.technician_id) {
-        const [techInfo] = await connection.execute('SELECT name FROM technicians WHERE id = ?', [data.technician_id]);
-        await connection.execute(
-          'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-          [usbDriveId, 'assigned', `Assigned to technician: ${techInfo[0].name}`, username]
-        );
+        await eventLogger.logTechnicianChange(connection, usbDriveId, null, data.technician_id, null, username);
       }
 
       created.push({ id: usbDriveId, usb_id: usbId });
     }
 
-    await connection.commit();
     return toPlainObject(created);
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+  });
 });
 
 ipcMain.handle('usb:update', async (event, id, data, username) => {
-  const connection = await database.getConnection();
-
-  try {
-    await connection.beginTransaction();
-
+  return database.withTransaction(async (connection) => {
     // Get current state
     const [current] = await connection.execute(
       `SELECT u.*, v.version_code, tech.name as technician_name
@@ -725,29 +606,15 @@ ipcMain.handle('usb:update', async (event, id, data, username) => {
 
     // Log version change
     if (data.version_id !== oldData.version_id) {
-      const [newVersion] = await connection.execute('SELECT version_code FROM versions WHERE id = ?', [data.version_id]);
-      await connection.execute(
-        'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-        [id, 'updated', `Version updated from ${oldData.version_code} to ${newVersion[0].version_code}`, username]
-      );
+      const { versionCode } = await eventLogger.fetchEntityNames(connection, { versionId: data.version_id });
+      await eventLogger.logEvent(connection, id, 'updated',
+        `Version updated from ${oldData.version_code} to ${versionCode}`, username);
     }
 
     // Log technician change
-    if (data.technician_id !== oldData.technician_id) {
-      if (!oldData.technician_id && data.technician_id) {
-        const [newTech] = await connection.execute('SELECT name FROM technicians WHERE id = ?', [data.technician_id]);
-        await connection.execute(
-          'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-          [id, 'assigned', `Assigned to technician: ${newTech[0].name}`, username]
-        );
-      } else if (oldData.technician_id && data.technician_id) {
-        const [newTech] = await connection.execute('SELECT name FROM technicians WHERE id = ?', [data.technician_id]);
-        await connection.execute(
-          'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-          [id, 'reassigned', `Reassigned from ${oldData.technician_name} to ${newTech[0].name}`, username]
-        );
-      }
-    }
+    await eventLogger.logTechnicianChange(
+      connection, id, oldData.technician_id, data.technician_id, oldData.technician_name, username
+    );
 
     // Log status change
     if (data.status !== oldData.status) {
@@ -756,34 +623,19 @@ ipcMain.handle('usb:update', async (event, id, data, username) => {
       const isTerminal = terminalStates.includes(data.status);
 
       if (isTerminal) {
-        await connection.execute(
-          'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-          [id, data.status, `Status changed to ${data.status}`, username]
-        );
+        await eventLogger.logEvent(connection, id, data.status, `Status changed to ${data.status}`, username);
       } else if (wasTerminal && !isTerminal) {
-        await connection.execute(
-          'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-          [id, 'reactivated', `Reactivated from '${oldData.status}' status to '${data.status}'`, username]
-        );
+        await eventLogger.logEvent(connection, id, 'reactivated',
+          `Reactivated from '${oldData.status}' status to '${data.status}'`, username);
       }
     }
 
-    await connection.commit();
     return toPlainObject({ id, ...data });
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+  });
 });
 
 ipcMain.handle('usb:repurpose', async (event, id, data, username) => {
-  const connection = await database.getConnection();
-
-  try {
-    await connection.beginTransaction();
-
+  return database.withTransaction(async (connection) => {
     // Get current state for logging
     const [current] = await connection.execute(
       `SELECT u.*, t.name as type_name, m.name as model_name, v.version_code, tech.name as technician_name
@@ -806,46 +658,29 @@ ipcMain.handle('usb:repurpose', async (event, id, data, username) => {
     );
 
     // Get new details for logging
-    const [newType] = await connection.execute('SELECT name FROM usb_types WHERE id = ?', [data.usb_type_id]);
-    const [newVersion] = await connection.execute('SELECT version_code FROM versions WHERE id = ?', [data.version_id]);
-
-    let newModelName = null;
-    if (data.model_id) {
-      const [newModel] = await connection.execute('SELECT name FROM models WHERE id = ?', [data.model_id]);
-      newModelName = newModel[0]?.name;
-    }
-
-    let newTechName = null;
-    if (data.technician_id) {
-      const [newTech] = await connection.execute('SELECT name FROM technicians WHERE id = ?', [data.technician_id]);
-      newTechName = newTech[0]?.name;
-    }
+    const newNames = await eventLogger.fetchEntityNames(connection, {
+      typeId: data.usb_type_id,
+      versionId: data.version_id,
+      modelId: data.model_id,
+      technicianId: data.technician_id
+    });
 
     const oldDesc = oldData.model_name
       ? `${oldData.type_name}/${oldData.model_name}/${oldData.version_code}`
       : `${oldData.type_name}/${oldData.version_code}`;
-    const newDesc = newModelName
-      ? `${newType[0].name}/${newModelName}/${newVersion[0].version_code}`
-      : `${newType[0].name}/${newVersion[0].version_code}`;
+    const newDesc = newNames.modelName
+      ? `${newNames.typeName}/${newNames.modelName}/${newNames.versionCode}`
+      : `${newNames.typeName}/${newNames.versionCode}`;
 
     let details = `Repurposed from ${oldDesc} to ${newDesc}`;
-    if (newTechName) {
-      details += `, assigned to ${newTechName}`;
+    if (newNames.technicianName) {
+      details += `, assigned to ${newNames.technicianName}`;
     }
 
-    await connection.execute(
-      'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-      [id, 'repurpose', details, username]
-    );
+    await eventLogger.logEvent(connection, id, 'repurpose', details, username);
 
-    await connection.commit();
     return toPlainObject({ id, ...data });
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+  });
 });
 
 // =====================================================
@@ -889,11 +724,7 @@ ipcMain.handle('pending:getAll', async () => {
 });
 
 ipcMain.handle('pending:markUpdated', async (event, usbIds, username) => {
-  const connection = await database.getConnection();
-
-  try {
-    await connection.beginTransaction();
-
+  return database.withTransaction(async (connection) => {
     for (const usbId of usbIds) {
       // Get USB drive and find current version
       const [usb] = await connection.execute(
@@ -916,30 +747,18 @@ ipcMain.handle('pending:markUpdated', async (event, usbIds, username) => {
         );
 
         // Log the update
-        await connection.execute(
-          'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-          [usbId, 'updated', `Version updated from ${usb[0].old_version_code} to ${usb[0].new_version_code}`, username]
-        );
+        await eventLogger.logEvent(connection, usbId, 'updated',
+          `Version updated from ${usb[0].old_version_code} to ${usb[0].new_version_code}`, username);
       }
     }
 
-    await connection.commit();
     return toPlainObject({ success: true, count: usbIds.length });
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+  });
 });
 
 // Bulk update USB drives
 ipcMain.handle('usb:bulkUpdate', async (event, usbIds, updates, username) => {
-  const connection = await database.getConnection();
-
-  try {
-    await connection.beginTransaction();
-
+  return database.withTransaction(async (connection) => {
     let updatedCount = 0;
 
     for (const usbId of usbIds) {
@@ -970,22 +789,20 @@ ipcMain.handle('usb:bulkUpdate', async (event, usbIds, updates, username) => {
         setClauses.push('usb_type_id = ?', 'model_id = ?', 'version_id = ?');
         params.push(repurpose.usb_type_id, repurpose.model_id || null, repurpose.version_id);
 
-        // Get new names for logging
+        // Get new names for logging using eventLogger
         const [newType] = await connection.execute(
           `SELECT ut.name as type_name, p.name as platform_name
            FROM usb_types ut JOIN platforms p ON ut.platform_id = p.id
            WHERE ut.id = ?`,
           [repurpose.usb_type_id]
         );
-        const [newVersion] = await connection.execute('SELECT version_code FROM versions WHERE id = ?', [repurpose.version_id]);
-        let newModelName = null;
-        if (repurpose.model_id) {
-          const [newModel] = await connection.execute('SELECT name FROM models WHERE id = ?', [repurpose.model_id]);
-          newModelName = newModel[0]?.name;
-        }
+        const newNames = await eventLogger.fetchEntityNames(connection, {
+          versionId: repurpose.version_id,
+          modelId: repurpose.model_id
+        });
 
         const oldDesc = `${oldData.platform_name} ${oldData.usb_type_name}${oldData.model_name ? ' - ' + oldData.model_name : ''} (${oldData.version_code})`;
-        const newDesc = `${newType[0]?.platform_name} ${newType[0]?.type_name}${newModelName ? ' - ' + newModelName : ''} (${newVersion[0]?.version_code})`;
+        const newDesc = `${newType[0]?.platform_name} ${newType[0]?.type_name}${newNames.modelName ? ' - ' + newNames.modelName : ''} (${newNames.versionCode})`;
         changes.push({ type: 'repurpose', detail: `Repurposed from ${oldDesc} to ${newDesc}` });
       }
 
@@ -993,8 +810,8 @@ ipcMain.handle('usb:bulkUpdate', async (event, usbIds, updates, username) => {
       if ('version_id' in updates && !updates.repurpose && updates.version_id !== oldData.version_id) {
         setClauses.push('version_id = ?');
         params.push(updates.version_id);
-        const [newVersion] = await connection.execute('SELECT version_code FROM versions WHERE id = ?', [updates.version_id]);
-        changes.push({ type: 'updated', detail: `Version changed from ${oldData.version_code} to ${newVersion[0]?.version_code}` });
+        const { versionCode } = await eventLogger.fetchEntityNames(connection, { versionId: updates.version_id });
+        changes.push({ type: 'updated', detail: `Version changed from ${oldData.version_code} to ${versionCode}` });
       }
 
       if ('technician_id' in updates) {
@@ -1004,13 +821,13 @@ ipcMain.handle('usb:bulkUpdate', async (event, usbIds, updates, username) => {
         // Track change for logging
         if (updates.technician_id !== oldData.technician_id) {
           if (!oldData.technician_id && updates.technician_id) {
-            const [newTech] = await connection.execute('SELECT name FROM technicians WHERE id = ?', [updates.technician_id]);
-            changes.push({ type: 'assigned', detail: `Assigned to technician: ${newTech[0]?.name || 'Unknown'}` });
+            const { technicianName } = await eventLogger.fetchEntityNames(connection, { technicianId: updates.technician_id });
+            changes.push({ type: 'assigned', detail: `Assigned to technician: ${technicianName || 'Unknown'}` });
           } else if (oldData.technician_id && !updates.technician_id) {
             changes.push({ type: 'updated', detail: `Unassigned from technician: ${oldData.technician_name}` });
           } else if (oldData.technician_id && updates.technician_id) {
-            const [newTech] = await connection.execute('SELECT name FROM technicians WHERE id = ?', [updates.technician_id]);
-            changes.push({ type: 'reassigned', detail: `Reassigned from ${oldData.technician_name} to ${newTech[0]?.name || 'Unknown'}` });
+            const { technicianName } = await eventLogger.fetchEntityNames(connection, { technicianId: updates.technician_id });
+            changes.push({ type: 'reassigned', detail: `Reassigned from ${oldData.technician_name} to ${technicianName || 'Unknown'}` });
           }
         }
       }
@@ -1040,23 +857,14 @@ ipcMain.handle('usb:bulkUpdate', async (event, usbIds, updates, username) => {
 
       // Log changes
       for (const change of changes) {
-        await connection.execute(
-          'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-          [usbId, change.type, `[Bulk Edit] ${change.detail}`, username]
-        );
+        await eventLogger.logEvent(connection, usbId, change.type, `[Bulk Edit] ${change.detail}`, username);
       }
 
       updatedCount++;
     }
 
-    await connection.commit();
     return toPlainObject({ success: true, updated: updatedCount });
-  } catch (error) {
-    await connection.rollback();
-    throw error;
-  } finally {
-    connection.release();
-  }
+  });
 });
 
 // =====================================================

@@ -48,9 +48,32 @@ async function queryOne(sql, params = []) {
   return rows[0] || null;
 }
 
+/**
+ * Execute a callback within a database transaction.
+ * Automatically handles commit/rollback and connection release.
+ * @param {Function} callback - Async function receiving the connection
+ * @returns {Promise} - Result of the callback
+ */
+async function withTransaction(callback) {
+  const connection = await getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
 module.exports = {
   getPool,
   getConnection,
   query,
-  queryOne
+  queryOne,
+  withTransaction,
+  serializeForIPC
 };

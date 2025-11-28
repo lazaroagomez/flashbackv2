@@ -33,12 +33,7 @@ export function resetFilters() {
 }
 
 export function getFilters() {
-  const result = {};
-  if (filters.search) result.search = filters.search;
-  if (filters.platform_id) result.platform_id = filters.platform_id;
-  if (filters.usb_type_id) result.usb_type_id = filters.usb_type_id;
-  if (filters.model_id) result.model_id = filters.model_id;
-  if (filters.technician_id) result.technician_id = filters.technician_id;
-  if (filters.status) result.status = filters.status;
-  return result;
+  return Object.fromEntries(
+    Object.entries(filters).filter(([_, v]) => v != null && v !== '')
+  );
 }
