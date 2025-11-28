@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('api', {
   createVersion: (data) => ipcRenderer.invoke('version:create', data),
   updateVersion: (id, data) => ipcRenderer.invoke('version:update', id, data),
   setCurrentVersion: (id, username) => ipcRenderer.invoke('version:setCurrent', id, username),
+  toggleVersionStatus: (id) => ipcRenderer.invoke('version:toggleStatus', id),
 
   // Technicians
   getTechnicians: (activeOnly) => ipcRenderer.invoke('technician:getAll', activeOnly),

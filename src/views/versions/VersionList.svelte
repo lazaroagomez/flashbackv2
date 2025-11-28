@@ -34,7 +34,8 @@
     is_legacy_valid: false,
     official_link: '',
     internal_link: '',
-    comments: ''
+    comments: '',
+    status: 'active'
   });
   let saving = $state(false);
 
@@ -166,7 +167,8 @@
       is_legacy_valid: false,
       official_link: '',
       internal_link: '',
-      comments: ''
+      comments: '',
+      status: 'active'
     };
     showModal = true;
   }
@@ -181,7 +183,8 @@
       is_legacy_valid: version.is_legacy_valid,
       official_link: version.official_link || '',
       internal_link: version.internal_link || '',
-      comments: version.comments || ''
+      comments: version.comments || '',
+      status: version.status || 'active'
     };
     showModal = true;
   }
@@ -269,6 +272,17 @@
       showError(e.message || 'Failed to set latest version');
     } finally {
       settingCurrentId = null;
+    }
+  }
+
+  async function handleToggleStatus(version) {
+    try {
+      const result = await api.toggleVersionStatus(version.id);
+      const newStatus = result.status === 'active' ? 'enabled' : 'disabled';
+      showSuccess(`Version ${version.version_code} ${newStatus}`);
+      loadData();
+    } catch (e) {
+      showError(e.message || 'Failed to toggle version status');
     }
   }
 
@@ -588,17 +602,20 @@
                 </thead>
                 <tbody>
                   {#each filteredVersions as version}
-                    <tr class="hover">
+                    <tr class="hover" class:opacity-50={version.status === 'inactive'}>
                       <td class="font-medium font-mono">{version.version_code}</td>
                       <td>
-                        <div class="flex gap-1">
+                        <div class="flex gap-1 flex-wrap">
+                          {#if version.status === 'inactive'}
+                            <span class="badge badge-error badge-sm">Disabled</span>
+                          {/if}
                           {#if version.is_current}
                             <span class="badge badge-success badge-sm">Latest</span>
                           {/if}
                           {#if version.is_legacy_valid}
                             <span class="badge badge-info badge-sm">Legacy</span>
                           {/if}
-                          {#if !version.is_current && !version.is_legacy_valid}
+                          {#if version.status !== 'inactive' && !version.is_current && !version.is_legacy_valid}
                             <span class="text-base-content/50">-</span>
                           {/if}
                         </div>
@@ -638,7 +655,7 @@
                           <button class="btn btn-ghost btn-sm" onclick={() => openEditModal(version)}>
                             Edit
                           </button>
-                          {#if !version.is_current}
+                          {#if !version.is_current && version.status !== 'inactive'}
                             <button
                               class="btn btn-outline btn-success btn-sm"
                               onclick={() => confirmSetCurrent(version)}
@@ -646,6 +663,15 @@
                               Set Latest
                             </button>
                           {/if}
+                          <button
+                            class="btn btn-outline btn-sm"
+                            class:btn-error={version.status !== 'inactive'}
+                            class:btn-success={version.status === 'inactive'}
+                            onclick={() => handleToggleStatus(version)}
+                            title={version.status === 'inactive' ? 'Enable version' : 'Disable version'}
+                          >
+                            {version.status === 'inactive' ? 'Enable' : 'Disable'}
+                          </button>
                         </div>
                       </td>
                     </tr>

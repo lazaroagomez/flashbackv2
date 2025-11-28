@@ -38,6 +38,7 @@ export const api = {
   createVersion: (data) => window.api.createVersion(toPlain(data)),
   updateVersion: (id, data) => window.api.updateVersion(id, toPlain(data)),
   setCurrentVersion: (id, username) => window.api.setCurrentVersion(id, username),
+  toggleVersionStatus: (id) => window.api.toggleVersionStatus(id),
 
   // Technicians
   getTechnicians: (activeOnly = false) => window.api.getTechnicians(activeOnly),

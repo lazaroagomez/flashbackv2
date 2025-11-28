@@ -257,7 +257,7 @@ ipcMain.handle('version:create', async (event, data) => {
 ipcMain.handle('version:update', async (event, id, data) => {
   const sql = `
     UPDATE versions
-    SET version_code = ?, is_current = ?, is_legacy_valid = ?, official_link = ?, internal_link = ?, comments = ?
+    SET version_code = ?, is_current = ?, is_legacy_valid = ?, official_link = ?, internal_link = ?, comments = ?, status = ?
     WHERE id = ?
   `;
   await database.query(sql, [
@@ -267,10 +267,22 @@ ipcMain.handle('version:update', async (event, id, data) => {
     data.official_link,
     data.internal_link,
     data.comments,
+    data.status || 'active',
     id
   ]);
 
   return toPlainObject({ id, ...data });
+});
+
+ipcMain.handle('version:toggleStatus', async (event, id) => {
+  // Toggle between 'active' and 'inactive'
+  const version = await database.queryOne('SELECT status FROM versions WHERE id = ?', [id]);
+  if (!version) throw new Error('Version not found');
+
+  const newStatus = version.status === 'active' ? 'inactive' : 'active';
+  await database.query('UPDATE versions SET status = ? WHERE id = ?', [newStatus, id]);
+
+  return toPlainObject({ id, status: newStatus });
 });
 
 ipcMain.handle('version:setCurrent', async (event, id, username) => {
