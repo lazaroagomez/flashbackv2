@@ -48,6 +48,9 @@ contextBridge.exposeInMainWorld('api', {
   updateUsbDrive: (id, data, username) => ipcRenderer.invoke('usb:update', id, data, username),
   repurposeUsbDrive: (id, data, username) => ipcRenderer.invoke('usb:repurpose', id, data, username),
   bulkUpdateUsbDrives: (usbIds, updates, username) => ipcRenderer.invoke('usb:bulkUpdate', usbIds, updates, username),
+  detectUsbDevices: () => ipcRenderer.invoke('usb:detect'),
+  bulkRegisterDrives: (commonData, hardwareList, username) => ipcRenderer.invoke('usb:bulkRegister', commonData, hardwareList, username),
+  formatUsbDrive: (diskIndex, label, fileSystem) => ipcRenderer.invoke('usb:format', diskIndex, label, fileSystem),
 
   // Event Logs
   getEventLogs: (usbId) => ipcRenderer.invoke('eventLog:getByUsb', usbId),

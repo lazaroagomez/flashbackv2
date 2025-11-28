@@ -8,6 +8,18 @@ echo.
 
 cd /d "%~dp0"
 
+:: Load environment variables from .env if it exists
+if exist ".env" (
+    echo Loading environment from .env...
+    for /f "usebackq tokens=1,* delims==" %%a in (".env") do (
+        set "line=%%a"
+        if not "!line:~0,1!"=="#" (
+            if not "%%a"=="" set "%%a=%%b"
+        )
+    )
+    echo.
+)
+
 :: Extract version from package.json
 for /f "tokens=2 delims=:," %%a in ('findstr /c:"\"version\"" package.json') do (
     set "VERSION=%%~a"

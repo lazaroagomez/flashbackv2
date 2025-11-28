@@ -56,6 +56,9 @@ export const api = {
   updateUsbDrive: (id, data, username) => window.api.updateUsbDrive(id, toPlain(data), username),
   repurposeUsbDrive: (id, data, username) => window.api.repurposeUsbDrive(id, toPlain(data), username),
   bulkUpdateUsbDrives: (usbIds, updates, username) => window.api.bulkUpdateUsbDrives(toPlain(usbIds), toPlain(updates), username),
+  detectUsbDevices: () => window.api.detectUsbDevices(),
+  bulkRegisterDrives: (commonData, hardwareList, username) => window.api.bulkRegisterDrives(toPlain(commonData), toPlain(hardwareList), username),
+  formatUsbDrive: (diskIndex, label = 'USB', fileSystem = 'exFAT') => window.api.formatUsbDrive(diskIndex, label, fileSystem),
 
   // Event Logs
   getEventLogs: (usbId) => window.api.getEventLogs(usbId),
