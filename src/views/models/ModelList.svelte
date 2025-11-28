@@ -5,6 +5,7 @@
   import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
   import StatusBadge from '../../lib/components/StatusBadge.svelte';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
+  import { createBulkImport } from '../../lib/utils/bulkImport.svelte.js';
 
   let { navigate } = $props();
 
@@ -24,15 +25,41 @@
     notes: '',
     status: 'active'
   });
-  let bulkText = $state('');
   let saving = $state(false);
-  let bulkParsed = $state([]);
 
-  // Duplicate detection
-  let showDuplicateConfirm = $state(false);
-  let similarItems = $state([]);
-  let pendingBulkItem = $state(null);
-  let bulkResults = $state({ created: 0, skipped: 0, failed: 0 });
+  // Single item duplicate detection (for create modal)
+  let showSingleDuplicateConfirm = $state(false);
+  let singleSimilarItems = $state([]);
+
+  // Bulk import composable
+  const bulkImport = createBulkImport({
+    checkSimilar: (item) => api.checkSimilarModel(item.name),
+    createItem: (item) => api.createModel({
+      name: item.name,
+      model_number: item.model_number,
+      notes: item.notes,
+      status: 'active'
+    }),
+    parseItem: (line) => {
+      const parts = line.split(',').map(p => p.trim());
+      return {
+        name: parts[0] || '',
+        model_number: parts[1] || '',
+        notes: parts[2] || '',
+        valid: !!parts[0]
+      };
+    },
+    entityName: 'model',
+    onComplete: ({ results, message, success }) => {
+      if (success) {
+        showSuccess(message);
+        closeBulkModal();
+        loadModels();
+      } else if (results.failed > 0) {
+        showError(message || 'Failed to create any models');
+      }
+    }
+  });
 
   async function loadModels() {
     loading = true;
@@ -79,9 +106,8 @@
     if (!editingModel) {
       const similar = await api.checkSimilarModel(formData.name);
       if (similar.length > 0) {
-        similarItems = similar;
-        pendingBulkItem = null;
-        showDuplicateConfirm = true;
+        singleSimilarItems = similar;
+        showSingleDuplicateConfirm = true;
         return;
       }
     }
@@ -108,21 +134,9 @@
     }
   }
 
-  function confirmDuplicate() {
-    showDuplicateConfirm = false;
-    if (pendingBulkItem) {
-      continueBulkImport(true);
-    } else {
-      doCreate();
-    }
-  }
-
-  function skipDuplicate() {
-    showDuplicateConfirm = false;
-    if (pendingBulkItem) {
-      bulkResults.skipped++;
-      continueBulkImport(false);
-    }
+  function confirmSingleDuplicate() {
+    showSingleDuplicateConfirm = false;
+    doCreate();
   }
 
   function viewDetail(model) {
@@ -130,118 +144,26 @@
   }
 
   function openBulkModal() {
-    bulkText = '';
-    bulkParsed = [];
+    bulkImport.reset();
     showBulkModal = true;
   }
 
   function closeBulkModal() {
     showBulkModal = false;
-    bulkText = '';
-    bulkParsed = [];
+    bulkImport.reset();
   }
-
-  function parseBulkText() {
-    const lines = bulkText.split('\n').filter(line => line.trim());
-    bulkParsed = lines.map(line => {
-      const parts = line.split(',').map(p => p.trim());
-      return {
-        name: parts[0] || '',
-        model_number: parts[1] || '',
-        notes: parts[2] || '',
-        valid: !!parts[0]
-      };
-    });
-  }
-
-  let bulkQueue = $state([]);
-  let bulkIndex = $state(0);
 
   async function handleBulkSubmit() {
-    const validModels = bulkParsed.filter(m => m.valid);
-    if (validModels.length === 0) {
-      showError('No valid models to import');
-      return;
-    }
-
-    bulkQueue = validModels;
-    bulkIndex = 0;
-    bulkResults = { created: 0, skipped: 0, failed: 0 };
-    saving = true;
-    await processBulkQueue();
-  }
-
-  async function processBulkQueue() {
-    while (bulkIndex < bulkQueue.length) {
-      const model = bulkQueue[bulkIndex];
-
-      // Check for duplicates
-      const similar = await api.checkSimilarModel(model.name);
-      if (similar.length > 0) {
-        similarItems = similar;
-        pendingBulkItem = model;
-        showDuplicateConfirm = true;
-        return; // Wait for user decision
-      }
-
-      // No duplicate, create it
-      try {
-        await api.createModel({
-          name: model.name,
-          model_number: model.model_number,
-          notes: model.notes,
-          status: 'active'
-        });
-        bulkResults.created++;
-      } catch (e) {
-        bulkResults.failed++;
-      }
-      bulkIndex++;
-    }
-
-    finishBulkImport();
-  }
-
-  async function continueBulkImport(shouldCreate) {
-    if (shouldCreate && pendingBulkItem) {
-      try {
-        await api.createModel({
-          name: pendingBulkItem.name,
-          model_number: pendingBulkItem.model_number,
-          notes: pendingBulkItem.notes,
-          status: 'active'
-        });
-        bulkResults.created++;
-      } catch (e) {
-        bulkResults.failed++;
-      }
-    }
-    pendingBulkItem = null;
-    bulkIndex++;
-    await processBulkQueue();
-  }
-
-  function finishBulkImport() {
-    saving = false;
-    const { created, skipped, failed } = bulkResults;
-    if (created > 0 || skipped > 0) {
-      let msg = `Created ${created} model(s)`;
-      if (skipped > 0) msg += `, ${skipped} skipped`;
-      if (failed > 0) msg += `, ${failed} failed`;
-      showSuccess(msg);
-      closeBulkModal();
-      loadModels();
-    } else if (failed > 0) {
-      showError('Failed to create any models');
+    const result = await bulkImport.startImport();
+    if (!result.success) {
+      showError(result.message);
     }
   }
 
   // Parse bulk text when it changes
   $effect(() => {
-    if (bulkText) {
-      parseBulkText();
-    } else {
-      bulkParsed = [];
+    if (bulkImport.bulkText) {
+      bulkImport.parseBulkText();
     }
   });
 
@@ -397,7 +319,7 @@
       </label>
       <textarea
         class="textarea textarea-bordered font-mono text-sm"
-        bind:value={bulkText}
+        bind:value={bulkImport.bulkText}
         placeholder="iPhone 15,A3090,Latest model
 iPhone 14,A2882
 Galaxy S24,SM-S921"
@@ -405,9 +327,9 @@ Galaxy S24,SM-S921"
       ></textarea>
     </div>
 
-    {#if bulkParsed.length > 0}
+    {#if bulkImport.bulkParsed.length > 0}
       <div class="bg-base-200 rounded-lg p-3">
-        <p class="font-semibold mb-2">Preview ({bulkParsed.filter(m => m.valid).length} valid):</p>
+        <p class="font-semibold mb-2">Preview ({bulkImport.bulkParsed.filter(m => m.valid).length} valid):</p>
         <div class="max-h-40 overflow-auto">
           <table class="table table-xs">
             <thead>
@@ -418,7 +340,7 @@ Galaxy S24,SM-S921"
               </tr>
             </thead>
             <tbody>
-              {#each bulkParsed as item}
+              {#each bulkImport.bulkParsed as item}
                 <tr class:text-error={!item.valid} class:opacity-50={!item.valid}>
                   <td>{item.name || '(empty)'}</td>
                   <td>{item.model_number || '-'}</td>
@@ -436,25 +358,38 @@ Galaxy S24,SM-S921"
       <button
         type="button"
         class="btn btn-primary"
-        disabled={saving || bulkParsed.filter(m => m.valid).length === 0}
+        disabled={bulkImport.saving || bulkImport.bulkParsed.filter(m => m.valid).length === 0}
         onclick={handleBulkSubmit}
       >
-        {#if saving}
+        {#if bulkImport.saving}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}
-        Import {bulkParsed.filter(m => m.valid).length} Model(s)
+        Import {bulkImport.bulkParsed.filter(m => m.valid).length} Model(s)
       </button>
     </div>
   </div>
 </Modal>
 
+<!-- Single item duplicate confirmation -->
 <ConfirmDialog
-  open={showDuplicateConfirm}
+  open={showSingleDuplicateConfirm}
   title="Similar Model Found"
-  message="A model with a similar name already exists: {similarItems.map(s => s.name + (s.model_number ? ` (${s.model_number})` : '')).join(', ')}. Do you still want to create '{pendingBulkItem?.name || formData.name}'?"
+  message="A model with a similar name already exists: {singleSimilarItems.map(s => s.name + (s.model_number ? ` (${s.model_number})` : '')).join(', ')}. Do you still want to create '{formData.name}'?"
   confirmText="Create Anyway"
-  cancelText={pendingBulkItem ? "Skip" : "Cancel"}
+  cancelText="Cancel"
   confirmClass="btn-warning"
-  onconfirm={confirmDuplicate}
-  oncancel={pendingBulkItem ? skipDuplicate : () => showDuplicateConfirm = false}
+  onconfirm={confirmSingleDuplicate}
+  oncancel={() => showSingleDuplicateConfirm = false}
+/>
+
+<!-- Bulk import duplicate confirmation -->
+<ConfirmDialog
+  open={bulkImport.showDuplicateConfirm}
+  title="Similar Model Found"
+  message="A model with a similar name already exists: {bulkImport.similarItems.map(s => s.name + (s.model_number ? ` (${s.model_number})` : '')).join(', ')}. Do you still want to create '{bulkImport.pendingBulkItem?.name}'?"
+  confirmText="Create Anyway"
+  cancelText="Skip"
+  confirmClass="btn-warning"
+  onconfirm={bulkImport.confirmDuplicate}
+  oncancel={bulkImport.skipDuplicate}
 />

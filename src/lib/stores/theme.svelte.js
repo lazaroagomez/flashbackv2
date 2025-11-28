@@ -1,6 +1,6 @@
 // Theme store with localStorage persistence
 
-const STORAGE_KEY = 'flashback-theme';
+import { loadFromStorage, saveToStorage, STORAGE_KEYS } from '../utils/localStorage.js';
 
 // Available themes from DaisyUI
 export const availableThemes = [
@@ -36,21 +36,21 @@ export const availableThemes = [
   { id: 'sunset', name: 'Sunset', type: 'dark' }
 ];
 
+// Validator for theme - must be in available themes
+function isValidTheme(value) {
+  return value && availableThemes.some(t => t.id === value);
+}
+
 function getInitialTheme() {
-  if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored && availableThemes.some(t => t.id === stored)) {
-      return stored;
-    }
-  }
-  return 'dark'; // Default theme
+  const stored = loadFromStorage(STORAGE_KEYS.THEME, 'dark');
+  return isValidTheme(stored) ? stored : 'dark';
 }
 
 export const theme = $state({ current: getInitialTheme() });
 
 export function setTheme(newTheme) {
   theme.current = newTheme;
-  localStorage.setItem(STORAGE_KEY, theme.current);
+  saveToStorage(STORAGE_KEYS.THEME, theme.current);
   applyTheme();
 }
 
