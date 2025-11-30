@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld('api', {
   // Authentication
   validatePassword: (password) => ipcRenderer.invoke('auth:validate', password),
 
+  // Database Health
+  checkDatabaseHealth: () => ipcRenderer.invoke('db:healthCheck'),
+  getDatabaseStatus: () => ipcRenderer.invoke('db:status'),
+
   // Platforms
   getPlatforms: (activeOnly) => ipcRenderer.invoke('platform:getAll', activeOnly),
   checkSimilarPlatform: (name) => ipcRenderer.invoke('platform:checkSimilar', name),
@@ -25,7 +29,7 @@ contextBridge.exposeInMainWorld('api', {
   getModelUsbDrives: (modelId) => ipcRenderer.invoke('model:getUsbDrives', modelId),
 
   // Versions
-  getVersions: (usbTypeId, modelId) => ipcRenderer.invoke('version:getAll', usbTypeId, modelId),
+  getVersions: (usbTypeId, modelId, activeOnly) => ipcRenderer.invoke('version:getAll', usbTypeId, modelId, activeOnly),
   checkSimilarVersion: (versionCode, usbTypeId, modelId) => ipcRenderer.invoke('version:checkSimilar', versionCode, usbTypeId, modelId),
   createVersion: (data) => ipcRenderer.invoke('version:create', data),
   updateVersion: (id, data) => ipcRenderer.invoke('version:update', id, data),

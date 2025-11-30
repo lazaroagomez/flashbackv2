@@ -107,7 +107,7 @@
     selectedTypeData = usbTypes.find(t => t.id === val) || null;
 
     if (val && !selectedTypeData?.requires_model) {
-      versions = await api.getVersions(val, 'null');
+      versions = await api.getVersions(val, 'null', true);
     } else {
       versions = [];
     }
@@ -118,9 +118,9 @@
     selectedVersion = null;
 
     if (selectedType && val) {
-      versions = await api.getVersions(selectedType, val);
+      versions = await api.getVersions(selectedType, val, true);
     } else if (selectedType && !selectedTypeData?.requires_model) {
-      versions = await api.getVersions(selectedType, 'null');
+      versions = await api.getVersions(selectedType, 'null', true);
     } else {
       versions = [];
     }
