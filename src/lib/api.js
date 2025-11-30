@@ -12,6 +12,10 @@ export const api = {
   // Authentication
   validatePassword: (password) => window.api.validatePassword(password),
 
+  // Database Health
+  checkDatabaseHealth: () => window.api.checkDatabaseHealth(),
+  getDatabaseStatus: () => window.api.getDatabaseStatus(),
+
   // Platforms
   getPlatforms: (activeOnly = false) => window.api.getPlatforms(activeOnly),
   checkSimilarPlatform: (name) => window.api.checkSimilarPlatform(name),
@@ -33,7 +37,7 @@ export const api = {
   getModelUsbDrives: (modelId) => window.api.getModelUsbDrives(modelId),
 
   // Versions
-  getVersions: (usbTypeId = null, modelId = null) => window.api.getVersions(usbTypeId, modelId),
+  getVersions: (usbTypeId = null, modelId = null, activeOnly = false) => window.api.getVersions(usbTypeId, modelId, activeOnly),
   checkSimilarVersion: (versionCode, usbTypeId, modelId = null) => window.api.checkSimilarVersion(versionCode, usbTypeId, modelId),
   createVersion: (data) => window.api.createVersion(toPlain(data)),
   updateVersion: (id, data) => window.api.updateVersion(id, toPlain(data)),

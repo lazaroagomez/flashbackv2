@@ -75,6 +75,17 @@ ipcMain.handle('auth:validate', async (event, password) => {
 });
 
 // =====================================================
+// Database Health IPC Handlers
+// =====================================================
+ipcMain.handle('db:healthCheck', async () => {
+  return database.healthCheck();
+});
+
+ipcMain.handle('db:status', async () => {
+  return database.getHealthStatus();
+});
+
+// =====================================================
 // Platform IPC Handlers (using CRUD factory)
 // =====================================================
 const platformHandlers = createCrudHandlers({
@@ -187,7 +198,7 @@ ipcMain.handle('model:getUsbDrives', async (event, modelId) => {
 // =====================================================
 // Version IPC Handlers
 // =====================================================
-ipcMain.handle('version:getAll', async (event, usbTypeId = null, modelId = null) => {
+ipcMain.handle('version:getAll', async (event, usbTypeId = null, modelId = null, activeOnly = false) => {
   let sql = `
     SELECT v.*,
            t.name as usb_type_name,
@@ -211,6 +222,9 @@ ipcMain.handle('version:getAll', async (event, usbTypeId = null, modelId = null)
       sql += ' AND v.model_id = ?';
       params.push(modelId);
     }
+  }
+  if (activeOnly) {
+    sql += " AND v.status = 'active'";
   }
   sql += ' ORDER BY t.name, m.name, v.version_code';
 
@@ -386,7 +400,7 @@ async function handleSetCurrentVersion(versionId, usbTypeId, modelId, username =
 
   for (const drive of drivesToClear) {
     await database.query(
-      "UPDATE usb_drives SET status = 'ready' WHERE id = ?",
+      "UPDATE usb_drives SET status = 'assigned' WHERE id = ?",
       [drive.id]
     );
 
@@ -394,14 +408,55 @@ async function handleSetCurrentVersion(versionId, usbTypeId, modelId, username =
       'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
       [
         drive.id,
-        'status_cleared',
+        'reactivated',
         `Cleared pending status: drive version ${drive.drive_version} is newer than current ${newVersion.version_code}`,
         username
       ]
     );
   }
 
-  return { markedPending: drivesToUpdate.length, clearedPending: drivesToClear.length };
+  // Also: Clear pending_update for drives that already HAVE the new current version
+  // This handles the rollback scenario where a drive was marked pending, then we roll back
+  // to the version the drive already has
+  let clearCurrentSql = `
+    SELECT u.id, u.usb_id
+    FROM usb_drives u
+    WHERE u.usb_type_id = ?
+    AND u.version_id = ?
+    AND u.status = 'pending_update'
+  `;
+  const clearCurrentParams = [usbTypeId, versionId];
+
+  if (modelId) {
+    clearCurrentSql += ' AND u.model_id = ?';
+    clearCurrentParams.push(modelId);
+  } else {
+    clearCurrentSql += ' AND u.model_id IS NULL';
+  }
+
+  const drivesWithCurrentVersion = await database.query(clearCurrentSql, clearCurrentParams);
+
+  for (const drive of drivesWithCurrentVersion) {
+    await database.query(
+      "UPDATE usb_drives SET status = 'assigned' WHERE id = ?",
+      [drive.id]
+    );
+
+    await database.query(
+      'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
+      [
+        drive.id,
+        'reactivated',
+        `Cleared pending status: drive already has current version ${newVersion.version_code}`,
+        username
+      ]
+    );
+  }
+
+  return {
+    markedPending: drivesToUpdate.length,
+    clearedPending: drivesToClear.length + drivesWithCurrentVersion.length
+  };
 }
 
 // =====================================================

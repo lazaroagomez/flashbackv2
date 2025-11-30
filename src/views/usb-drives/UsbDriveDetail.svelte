@@ -54,9 +54,9 @@
         api.getTechnicians(true)
       ]);
 
-      // Load versions for current type/model
+      // Load versions for current type/model (only active versions)
       const modelId = usb.requires_model ? usb.model_id : 'null';
-      versions = await api.getVersions(usb.usb_type_id, modelId);
+      versions = await api.getVersions(usb.usb_type_id, modelId, true);
     } catch (e) {
       showError('Failed to load USB drive details');
     } finally {
@@ -166,7 +166,7 @@
     repurposeSelectedType = repurposeUsbTypes.find(t => t.id === val);
 
     if (repurposeData.usb_type_id && !repurposeSelectedType?.requires_model) {
-      repurposeVersions = await api.getVersions(repurposeData.usb_type_id, 'null');
+      repurposeVersions = await api.getVersions(repurposeData.usb_type_id, 'null', true);
     } else {
       repurposeVersions = [];
     }
@@ -177,7 +177,7 @@
     repurposeData.version_id = null;
 
     if (repurposeData.usb_type_id && repurposeData.model_id) {
-      repurposeVersions = await api.getVersions(repurposeData.usb_type_id, repurposeData.model_id);
+      repurposeVersions = await api.getVersions(repurposeData.usb_type_id, repurposeData.model_id, true);
     } else {
       repurposeVersions = [];
     }
