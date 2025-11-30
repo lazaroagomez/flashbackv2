@@ -17,8 +17,11 @@ const {
   toPlainObject
 } = require('./services/queryHelpers.cjs');
 
-// Application password from environment variable (with fallback)
-const APP_PASSWORD = process.env.APP_PASSWORD || 'flashback2024';
+// Application password from environment variable
+if (!process.env.APP_PASSWORD) {
+  console.error('WARNING: APP_PASSWORD environment variable not set. Using insecure default.');
+}
+const APP_PASSWORD = process.env.APP_PASSWORD || 'changeme';
 
 let mainWindow;
 
@@ -61,9 +64,18 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
   if (process.platform !== 'darwin') {
     app.quit();
+  }
+});
+
+// Clean up database connections before quitting
+app.on('before-quit', async () => {
+  try {
+    await database.closePool();
+  } catch (error) {
+    console.error('Error closing database pool:', error);
   }
 });
 
@@ -296,112 +308,115 @@ ipcMain.handle('version:setCurrent', async (event, id, username) => {
 });
 
 async function handleSetCurrentVersion(versionId, usbTypeId, modelId, username = 'System') {
-  // Unset previous current version for this type/model combination
-  let unsql = 'UPDATE versions SET is_current = FALSE WHERE usb_type_id = ? AND is_current = TRUE';
-  const unparams = [usbTypeId];
+  // Wrap entire cascade operation in a transaction for data integrity
+  return database.withTransaction(async (connection) => {
+    // Unset previous current version for this type/model combination
+    let unsql = 'UPDATE versions SET is_current = FALSE WHERE usb_type_id = ? AND is_current = TRUE';
+    const unparams = [usbTypeId];
 
-  if (modelId) {
-    unsql += ' AND model_id = ?';
-    unparams.push(modelId);
-  } else {
-    unsql += ' AND model_id IS NULL';
-  }
+    if (modelId) {
+      unsql += ' AND model_id = ?';
+      unparams.push(modelId);
+    } else {
+      unsql += ' AND model_id IS NULL';
+    }
 
-  await database.query(unsql, unparams);
+    await connection.execute(unsql, unparams);
 
-  // Set new current version
-  await database.query(
-    'UPDATE versions SET is_current = TRUE, marked_current_at = NOW() WHERE id = ?',
-    [versionId]
-  );
-
-  // Get the new current version's created_at to compare
-  const currentVersion = await database.queryOne('SELECT created_at FROM versions WHERE id = ?', [versionId]);
-
-  // Cascade: Mark USB drives as pending_update only if they have OLDER versions
-  // A version is considered older if it was created before the new current version
-  let cascadeSql = `
-    SELECT u.id, u.usb_id, v.version_code as old_version
-    FROM usb_drives u
-    JOIN versions v ON u.version_id = v.id
-    WHERE u.usb_type_id = ?
-    AND u.version_id != ?
-    AND v.is_legacy_valid = FALSE
-    AND v.created_at < ?
-    AND u.status NOT IN ('lost', 'retired')
-  `;
-  const cascadeParams = [usbTypeId, versionId, currentVersion.created_at];
-
-  if (modelId) {
-    cascadeSql += ' AND u.model_id = ?';
-    cascadeParams.push(modelId);
-  } else {
-    cascadeSql += ' AND u.model_id IS NULL';
-  }
-
-  const drivesToUpdate = await database.query(cascadeSql, cascadeParams);
-
-  // Get new version code for logging
-  const newVersion = await database.queryOne('SELECT version_code FROM versions WHERE id = ?', [versionId]);
-
-  // Update each drive and create event log
-  for (const drive of drivesToUpdate) {
-    await database.query(
-      "UPDATE usb_drives SET status = 'pending_update' WHERE id = ?",
-      [drive.id]
+    // Set new current version
+    await connection.execute(
+      'UPDATE versions SET is_current = TRUE, marked_current_at = NOW() WHERE id = ?',
+      [versionId]
     );
 
-    await database.query(
-      'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-      [
-        drive.id,
-        'marked_pending',
-        `Marked for update: current version ${drive.old_version} is outdated (new current: ${newVersion.version_code})`,
-        username
-      ]
-    );
-  }
+    // Get the new current version's created_at to compare
+    const [[currentVersion]] = await connection.execute('SELECT created_at FROM versions WHERE id = ?', [versionId]);
 
-  // Also: Clear pending_update for drives with NEWER versions (rollback scenario)
-  // If a drive has a version created AFTER the new current, and is pending_update, set back to ready
-  let clearPendingSql = `
-    SELECT u.id, u.usb_id, v.version_code as drive_version
-    FROM usb_drives u
-    JOIN versions v ON u.version_id = v.id
-    WHERE u.usb_type_id = ?
-    AND u.version_id != ?
-    AND v.created_at > ?
-    AND u.status = 'pending_update'
-  `;
-  const clearParams = [usbTypeId, versionId, currentVersion.created_at];
+    // Cascade: Mark USB drives as pending_update only if they have OLDER versions
+    // A version is considered older if it was created before the new current version
+    let cascadeSql = `
+      SELECT u.id, u.usb_id, v.version_code as old_version
+      FROM usb_drives u
+      JOIN versions v ON u.version_id = v.id
+      WHERE u.usb_type_id = ?
+      AND u.version_id != ?
+      AND v.is_legacy_valid = FALSE
+      AND v.created_at < ?
+      AND u.status NOT IN ('lost', 'retired')
+    `;
+    const cascadeParams = [usbTypeId, versionId, currentVersion.created_at];
 
-  if (modelId) {
-    clearPendingSql += ' AND u.model_id = ?';
-    clearParams.push(modelId);
-  } else {
-    clearPendingSql += ' AND u.model_id IS NULL';
-  }
+    if (modelId) {
+      cascadeSql += ' AND u.model_id = ?';
+      cascadeParams.push(modelId);
+    } else {
+      cascadeSql += ' AND u.model_id IS NULL';
+    }
 
-  const drivesToClear = await database.query(clearPendingSql, clearParams);
+    const [drivesToUpdate] = await connection.execute(cascadeSql, cascadeParams);
 
-  for (const drive of drivesToClear) {
-    await database.query(
-      "UPDATE usb_drives SET status = 'ready' WHERE id = ?",
-      [drive.id]
-    );
+    // Get new version code for logging
+    const [[newVersion]] = await connection.execute('SELECT version_code FROM versions WHERE id = ?', [versionId]);
 
-    await database.query(
-      'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
-      [
-        drive.id,
-        'status_cleared',
-        `Cleared pending status: drive version ${drive.drive_version} is newer than current ${newVersion.version_code}`,
-        username
-      ]
-    );
-  }
+    // Update each drive and create event log
+    for (const drive of drivesToUpdate) {
+      await connection.execute(
+        "UPDATE usb_drives SET status = 'pending_update' WHERE id = ?",
+        [drive.id]
+      );
 
-  return { markedPending: drivesToUpdate.length, clearedPending: drivesToClear.length };
+      await connection.execute(
+        'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
+        [
+          drive.id,
+          'marked_pending',
+          `Marked for update: current version ${drive.old_version} is outdated (new current: ${newVersion.version_code})`,
+          username
+        ]
+      );
+    }
+
+    // Also: Clear pending_update for drives with NEWER versions (rollback scenario)
+    // If a drive has a version created AFTER the new current, and is pending_update, set back to ready
+    let clearPendingSql = `
+      SELECT u.id, u.usb_id, v.version_code as drive_version
+      FROM usb_drives u
+      JOIN versions v ON u.version_id = v.id
+      WHERE u.usb_type_id = ?
+      AND u.version_id != ?
+      AND v.created_at > ?
+      AND u.status = 'pending_update'
+    `;
+    const clearParams = [usbTypeId, versionId, currentVersion.created_at];
+
+    if (modelId) {
+      clearPendingSql += ' AND u.model_id = ?';
+      clearParams.push(modelId);
+    } else {
+      clearPendingSql += ' AND u.model_id IS NULL';
+    }
+
+    const [drivesToClear] = await connection.execute(clearPendingSql, clearParams);
+
+    for (const drive of drivesToClear) {
+      await connection.execute(
+        "UPDATE usb_drives SET status = 'assigned' WHERE id = ?",
+        [drive.id]
+      );
+
+      await connection.execute(
+        'INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)',
+        [
+          drive.id,
+          'status_cleared',
+          `Cleared pending status: drive version ${drive.drive_version} is newer than current ${newVersion.version_code}`,
+          username
+        ]
+      );
+    }
+
+    return { markedPending: drivesToUpdate.length, clearedPending: drivesToClear.length };
+  });
 }
 
 // =====================================================
@@ -439,22 +454,7 @@ ipcMain.handle('technician:getUsbDrives', async (event, technicianId) => {
 // USB Drive IPC Handlers
 // =====================================================
 ipcMain.handle('usb:getAll', async (event, filters = {}) => {
-  let sql = `
-    SELECT u.id, u.usb_id, u.status, u.custom_text, u.created_at, u.updated_at,
-           u.hardware_model, u.hardware_serial, u.capacity_gb,
-           p.id as platform_id, p.name as platform_name,
-           t.id as usb_type_id, t.name as usb_type_name, t.requires_model,
-           m.id as model_id, m.name as model_name, m.model_number,
-           v.id as version_id, v.version_code, v.is_current as version_is_current, v.is_legacy_valid,
-           tech.id as technician_id, tech.name as technician_name, tech.status as technician_status
-    FROM usb_drives u
-    JOIN platforms p ON u.platform_id = p.id
-    JOIN usb_types t ON u.usb_type_id = t.id
-    LEFT JOIN models m ON u.model_id = m.id
-    JOIN versions v ON u.version_id = v.id
-    LEFT JOIN technicians tech ON u.technician_id = tech.id
-    WHERE 1=1
-  `;
+  let sql = USB_DRIVE_BASE_SELECT + ` WHERE 1=1`;
   const params = [];
 
   if (filters.platform_id) {
@@ -1118,6 +1118,15 @@ ipcMain.handle('sticker:printSingle', async (event, usbId) => {
   fs.writeFileSync(tempPath, pdfBytes);
   shell.openPath(tempPath);
 
+  // Schedule cleanup after 2 minutes to allow time for printing
+  setTimeout(() => {
+    try {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    } catch (e) {
+      // Ignore cleanup errors (file may be in use)
+    }
+  }, 120000);
+
   return toPlainObject({ success: true, path: tempPath });
 });
 
@@ -1145,6 +1154,15 @@ ipcMain.handle('sticker:printBulk', async (event, usbIds) => {
   const tempPath = path.join(app.getPath('temp'), `stickers_bulk_${Date.now()}.pdf`);
   fs.writeFileSync(tempPath, pdfBytes);
   shell.openPath(tempPath);
+
+  // Schedule cleanup after 2 minutes to allow time for printing
+  setTimeout(() => {
+    try {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    } catch (e) {
+      // Ignore cleanup errors (file may be in use)
+    }
+  }, 120000);
 
   return toPlainObject({ success: true, path: tempPath, count: usbs.length });
 });

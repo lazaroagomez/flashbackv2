@@ -1305,6 +1305,9 @@ CREATE TABLE `usb_drives` (
   `technician_id` int DEFAULT NULL,
   `status` enum('assigned','pending_update','damaged','lost','retired') DEFAULT 'assigned',
   `custom_text` varchar(12) DEFAULT NULL,
+  `hardware_model` varchar(100) DEFAULT NULL,
+  `hardware_serial` varchar(100) DEFAULT NULL,
+  `capacity_gb` int DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;

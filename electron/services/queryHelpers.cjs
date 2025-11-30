@@ -32,6 +32,7 @@ function appendModelIdCondition(sql, params, modelId, tableAlias = '') {
  */
 const USB_DRIVE_BASE_SELECT = `
   SELECT u.id, u.usb_id, u.status, u.custom_text, u.created_at, u.updated_at,
+         u.hardware_model, u.hardware_serial, u.capacity_gb,
          u.platform_id, u.usb_type_id, u.model_id, u.version_id, u.technician_id,
          p.name as platform_name,
          t.name as usb_type_name, t.requires_model, t.supports_legacy,

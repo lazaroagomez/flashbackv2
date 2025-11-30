@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../api.js';
+  import { showError } from '../../stores/toast.svelte.js';
   import SearchableSelect from '../SearchableSelect.svelte';
 
   let {
@@ -19,6 +20,7 @@
       platforms = await api.getPlatforms(activeOnly);
     } catch (e) {
       console.error('Failed to load platforms:', e);
+      showError('Failed to load platforms');
     } finally {
       loading = false;
     }

@@ -1,5 +1,6 @@
 <script>
   import { api } from '../../api.js';
+  import { showError } from '../../stores/toast.svelte.js';
   import SearchableSelect from '../SearchableSelect.svelte';
 
   let {
@@ -25,6 +26,7 @@
       versions = await api.getVersions(usbTypeId, modelId === null ? 'null' : modelId);
     } catch (e) {
       console.error('Failed to load versions:', e);
+      showError('Failed to load versions');
     } finally {
       loading = false;
     }

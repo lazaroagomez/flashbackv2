@@ -1,11 +1,19 @@
 const mysql = require('mysql2/promise');
 
-// Database configuration from environment variables (with fallbacks)
+// Validate required environment variables
+if (!process.env.DB_PASSWORD) {
+  console.error('WARNING: DB_PASSWORD environment variable not set. Using insecure default.');
+}
+if (!process.env.DB_HOST) {
+  console.error('WARNING: DB_HOST environment variable not set. Using default.');
+}
+
+// Database configuration from environment variables
 const CONFIG = {
-  host: process.env.DB_HOST || '192.168.11.56',
+  host: process.env.DB_HOST || 'localhost',
   port: parseInt(process.env.DB_PORT, 10) || 3306,
-  user: process.env.DB_USER || 'flashback_user',
-  password: process.env.DB_PASSWORD || '1234',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME || 'flashback_usb',
   waitForConnections: true,
   connectionLimit: 10,
@@ -69,11 +77,24 @@ async function withTransaction(callback) {
   }
 }
 
+/**
+ * Close the database connection pool.
+ * Should be called on app shutdown for clean exit.
+ */
+async function closePool() {
+  if (pool) {
+    await pool.end();
+    pool = null;
+    console.log('Database pool closed');
+  }
+}
+
 module.exports = {
   getPool,
   getConnection,
   query,
   queryOne,
   withTransaction,
-  serializeForIPC
+  serializeForIPC,
+  closePool
 };
