@@ -22,7 +22,8 @@
     loading = true;
     try {
       // Pass modelId as 'null' string if null, to filter for general versions
-      versions = await api.getVersions(usbTypeId, modelId === null ? 'null' : modelId);
+      // Only show active versions in dropdowns
+      versions = await api.getVersions(usbTypeId, modelId === null ? 'null' : modelId, true);
     } catch (e) {
       console.error('Failed to load versions:', e);
     } finally {

@@ -95,7 +95,7 @@
     }
     try {
       const modelId = selectedType?.requires_model ? formData.model_id : 'null';
-      versions = await api.getVersions(formData.usb_type_id, modelId);
+      versions = await api.getVersions(formData.usb_type_id, modelId, true);
     } catch (e) {
       showError('Failed to load versions');
     }
