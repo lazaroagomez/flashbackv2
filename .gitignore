@@ -26,3 +26,5 @@ npm-debug.log*
 *.temp
 nul
 .claude/settings.local.json
+docs/powershell-disk-management-guide.md
+docs/etcher-sdk-documentation.md
