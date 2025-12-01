@@ -4,20 +4,28 @@ const execAsync = promisify(exec);
 
 /**
  * Execute a PowerShell command and return parsed JSON result
+ * Uses Base64 encoding to avoid escaping issues with complex scripts
  * @param {string} script - PowerShell script to execute
  * @param {number} timeout - Command timeout in milliseconds
  * @returns {Promise<any>} Parsed JSON result or null
  */
 async function runPowerShell(script, timeout = 30000) {
-  // Escape the script for command line
-  const escapedScript = script.replace(/"/g, '\\"');
-  const command = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "${escapedScript}"`;
+  // Wrap script to suppress progress output and ensure clean JSON
+  const wrappedScript = `$ProgressPreference = 'SilentlyContinue'; ${script.trim()}`;
+
+  // Encode script as Base64 to avoid escaping issues
+  const encodedScript = Buffer.from(wrappedScript, 'utf16le').toString('base64');
+  const command = `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${encodedScript}`;
 
   try {
     const { stdout, stderr } = await execAsync(command, { timeout });
 
-    if (stderr && stderr.toLowerCase().includes('error')) {
-      throw new Error(stderr);
+    // Only treat stderr as error if it contains actual error keywords (not progress/CLIXML)
+    if (stderr && !stderr.includes('CLIXML') && !stderr.includes('progress')) {
+      const lowerStderr = stderr.toLowerCase();
+      if (lowerStderr.includes('error') || lowerStderr.includes('exception') || lowerStderr.includes('cannot')) {
+        throw new Error(stderr);
+      }
     }
 
     if (!stdout.trim()) return null;
@@ -285,14 +293,26 @@ async function formatUSBDrive(diskNumber, options = {}) {
   }
 
   // PowerShell script to format the drive
+  // Handles both RAW disks and already-initialized disks
   const script = `
     $ErrorActionPreference = 'Stop'
     try {
-      # Clear the disk (removes all partitions and data)
-      Clear-Disk -Number ${diskNumber} -RemoveData -RemoveOEM -Confirm:$false
+      $disk = Get-Disk -Number ${diskNumber}
 
-      # Initialize with partition style
-      Initialize-Disk -Number ${diskNumber} -PartitionStyle ${partitionStyle}
+      # Handle based on current partition style
+      if ($disk.PartitionStyle -eq 'RAW') {
+        # Disk is RAW, just initialize it
+        Initialize-Disk -Number ${diskNumber} -PartitionStyle ${partitionStyle}
+      } elseif ($disk.PartitionStyle -eq '${partitionStyle}') {
+        # Same partition style - just remove existing partitions
+        Get-Partition -DiskNumber ${diskNumber} -ErrorAction SilentlyContinue |
+          Where-Object { $_.Type -ne 'Reserved' } |
+          Remove-Partition -Confirm:$false -ErrorAction SilentlyContinue
+      } else {
+        # Different partition style - need to clear and reinitialize
+        Clear-Disk -Number ${diskNumber} -RemoveData -RemoveOEM -Confirm:$false
+        Initialize-Disk -Number ${diskNumber} -PartitionStyle ${partitionStyle}
+      }
 
       # Create partition and get drive letter
       $partition = New-Partition -DiskNumber ${diskNumber} -UseMaximumSize -AssignDriveLetter
