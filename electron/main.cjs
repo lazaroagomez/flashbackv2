@@ -9,6 +9,7 @@ const pdfGenerator = require('./services/pdfGenerator.cjs');
 const eventLogger = require('./services/eventLogger.cjs');
 const { createCrudHandlers, registerCrudHandlers } = require('./services/crudFactory.cjs');
 const usbDetector = require('./services/usbDetector.cjs');
+const { flasher } = require('./services/usbFlasher.cjs');
 const {
   appendModelIdCondition,
   USB_DRIVE_BASE_SELECT,
@@ -636,10 +637,10 @@ function buildFormatDetails(fileSystem, label, formatType, result, errorMsg, pre
   return details;
 }
 
-// Format a USB drive (WARNING: destroys all data!)
-// Accepts object: { diskIndex, label, fileSystem, dbId, username }
+// Format a USB drive using PowerShell cmdlets (WARNING: destroys all data!)
+// Accepts object: { diskIndex, label, fileSystem, partitionStyle, dbId, username }
 ipcMain.handle('usb:format', async (event, formatData) => {
-  const { diskIndex, label, fileSystem, dbId, username } = formatData;
+  const { diskIndex, label, fileSystem = 'exFAT', partitionStyle = 'MBR', dbId, username } = formatData;
 
   // Fetch previous state for registered drives (for logging)
   let previousState = null;
@@ -653,28 +654,189 @@ ipcMain.handle('usb:format', async (event, formatData) => {
   }
 
   try {
-    const result = await usbDetector.formatUSBDrive(diskIndex, label, fileSystem);
+    const result = await usbDetector.formatUSBDrive(diskIndex, {
+      partitionStyle,
+      fileSystem,
+      label
+    });
 
     // Log successful format for registered drives
     if (dbId && previousState) {
-      const details = buildFormatDetails(fileSystem, label, 'quick', 'SUCCESS', null, previousState);
+      const details = buildFormatDetails(fileSystem, label, partitionStyle, 'SUCCESS', null, previousState);
       await database.query(
         `INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, 'formatted', ?, ?)`,
         [dbId, details, username]
       );
     }
 
-    return result;
+    return toPlainObject(result);
   } catch (error) {
     // Log failed format attempt for registered drives
     if (dbId && previousState) {
-      const details = buildFormatDetails(fileSystem, label, 'quick', 'FAILED', error.message, previousState);
+      const details = buildFormatDetails(fileSystem, label, partitionStyle, 'FAILED', error.message, previousState);
       await database.query(
         `INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, 'formatted', ?, ?)`,
         [dbId, details, username]
       );
     }
     throw new Error(error.message);
+  }
+});
+
+// =====================================================
+// USB Flashing IPC Handlers (etcher-sdk)
+// =====================================================
+
+// Validate a USB disk is safe for operations
+ipcMain.handle('flash:validateDisk', async (event, diskNumber) => {
+  try {
+    const result = await usbDetector.validateUsbDisk(diskNumber);
+    return toPlainObject(result);
+  } catch (error) {
+    throw new Error(`Disk validation failed: ${error.message}`);
+  }
+});
+
+// Get partition info for a disk
+ipcMain.handle('flash:getDiskPartitions', async (event, diskNumber) => {
+  try {
+    const partitions = await usbDetector.getDiskPartitions(diskNumber);
+    return toPlainObject(partitions);
+  } catch (error) {
+    throw new Error(`Failed to get partitions: ${error.message}`);
+  }
+});
+
+// Initialize the flash scanner for device monitoring
+ipcMain.handle('flash:initScanner', async () => {
+  try {
+    await flasher.initScanner();
+    return { success: true };
+  } catch (error) {
+    throw new Error(`Scanner initialization failed: ${error.message}`);
+  }
+});
+
+// Get devices from etcher-sdk scanner
+ipcMain.handle('flash:getDevices', async () => {
+  try {
+    const devices = await flasher.getConnectedDevices();
+    return toPlainObject(devices);
+  } catch (error) {
+    throw new Error(`Failed to get devices: ${error.message}`);
+  }
+});
+
+// Validate an image file
+ipcMain.handle('flash:validateImage', async (event, imagePath) => {
+  try {
+    const info = await flasher.validateImage(imagePath);
+    return toPlainObject(info);
+  } catch (error) {
+    throw new Error(`Image validation failed: ${error.message}`);
+  }
+});
+
+// Open file dialog to select an image
+ipcMain.handle('flash:selectImage', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Disk Image',
+    filters: [
+      { name: 'Disk Images', extensions: ['img', 'iso', 'bin', 'raw'] },
+      { name: 'Compressed Images', extensions: ['zip', 'gz', 'xz', 'bz2'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+    properties: ['openFile']
+  });
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return null;
+  }
+
+  return result.filePaths[0];
+});
+
+// Start flashing image to devices
+ipcMain.handle('flash:start', async (event, params) => {
+  const { imagePath, devicePaths, options = {} } = params;
+
+  // Validate all devices are USB before starting
+  for (const devicePath of devicePaths) {
+    const match = devicePath.match(/PhysicalDrive(\d+)/i);
+    if (match) {
+      const diskNumber = parseInt(match[1], 10);
+      const validation = await usbDetector.validateUsbDisk(diskNumber);
+      if (!validation.isValid) {
+        throw new Error(`Device validation failed for disk ${diskNumber}: ${validation.error}`);
+      }
+    }
+  }
+
+  try {
+    const result = await flasher.flashImage(imagePath, devicePaths, {
+      verify: options.verify !== false, // Default to true
+      onProgress: (progress) => {
+        // Send progress to renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('flash:progress', progress);
+        }
+      },
+      onFail: (device, error) => {
+        // Send failure to renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('flash:deviceFailed', { device, error: error.message });
+        }
+      }
+    });
+
+    return toPlainObject(result);
+  } catch (error) {
+    throw new Error(`Flash operation failed: ${error.message}`);
+  }
+});
+
+// Cancel active flash operation
+ipcMain.handle('flash:cancel', async () => {
+  try {
+    const result = await flasher.cancelJob();
+    return toPlainObject(result);
+  } catch (error) {
+    throw new Error(`Cancel failed: ${error.message}`);
+  }
+});
+
+// Get current flash job status
+ipcMain.handle('flash:getStatus', async () => {
+  try {
+    const status = flasher.getJobStatus();
+    return toPlainObject(status);
+  } catch (error) {
+    throw new Error(`Failed to get status: ${error.message}`);
+  }
+});
+
+// Log a flash event for a registered drive
+ipcMain.handle('flash:logEvent', async (event, data) => {
+  const { dbId, imagePath, result, username } = data;
+
+  if (!dbId) {
+    return { success: true }; // No logging for unregistered drives
+  }
+
+  const eventType = 'flash';
+  const imageName = imagePath ? path.basename(imagePath) : 'unknown';
+  const details = result.success
+    ? `Flash SUCCESS: Image=${imageName}, Verified=${result.verified || false}, Duration=${result.duration || 0}ms`
+    : `Flash FAILED: Image=${imageName}, Error=${result.error || 'Unknown error'}`;
+
+  try {
+    await database.query(
+      `INSERT INTO event_logs (usb_id, event_type, details, username) VALUES (?, ?, ?, ?)`,
+      [dbId, eventType, details, username]
+    );
+    return { success: true };
+  } catch (error) {
+    throw new Error(`Failed to log event: ${error.message}`);
   }
 });
 

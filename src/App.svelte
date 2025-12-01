@@ -18,6 +18,7 @@
   import PendingUpdatesList from './views/pending-updates/PendingUpdatesList.svelte';
   import ConnectedDrivesView from './views/connected-drives/ConnectedDrivesView.svelte';
   import BulkRegisterView from './views/connected-drives/BulkRegisterView.svelte';
+  import FlashingModule from './views/flashing/FlashingModule.svelte';
 
   // Make navigate globally available
   if (typeof window !== 'undefined') {
@@ -57,6 +58,8 @@
       <ConnectedDrivesView {navigate} />
     {:else if navigation.currentView === 'bulk-register'}
       <BulkRegisterView {navigate} drives={navigation.viewParams.drives} />
+    {:else if navigation.currentView === 'flashing'}
+      <FlashingModule {navigate} />
     {:else}
       <Dashboard {navigate} />
     {/if}
