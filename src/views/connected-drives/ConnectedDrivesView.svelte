@@ -2,13 +2,21 @@
   import { api } from '../../lib/api.js';
   import { session } from '../../lib/stores/session.svelte.js';
   import { showSuccess, showError } from '../../lib/stores/toast.svelte.js';
+  import {
+    connectedDrivesState,
+    loadConnectedDrives,
+    refreshConnectedDrives,
+    removeDriveFromCache
+  } from '../../lib/stores/connectedDrives.svelte.js';
   import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
 
   let { navigate } = $props();
 
-  let drives = $state([]);
-  let loading = $state(true);
-  let error = $state(null);
+  // Use global store for drives
+  const drives = $derived(connectedDrivesState.drives);
+  const loading = $derived(connectedDrivesState.loading);
+  const error = $derived(connectedDrivesState.error);
+
   let selected = $state([]);
 
   // Single format state
@@ -31,18 +39,11 @@
   const unregisteredDrives = $derived(drives.filter(d => !d.isRegistered && d.serial));
   const noSerialDrives = $derived(drives.filter(d => !d.isRegistered && !d.serial));
 
+  // Use global store's refresh function
   async function loadDrives() {
-    loading = true;
-    error = null;
     selected = [];
     formatQueue = [];
-    try {
-      drives = await api.detectUsbDevices();
-    } catch (e) {
-      error = e.message || 'Failed to detect USB devices';
-    } finally {
-      loading = false;
-    }
+    await refreshConnectedDrives();
   }
 
   function toggleSelect(diskIndex) {
@@ -193,8 +194,8 @@
     try {
       await api.ejectUsbDevice(drive.driveLetter || drive.diskIndex);
       showSuccess(`Drive "${drive.model}" ejected safely`);
-      // Remove from list
-      drives = drives.filter(d => d.diskIndex !== drive.diskIndex);
+      // Remove from cached list
+      removeDriveFromCache(drive.diskIndex);
     } catch (e) {
       showError(e.message || 'Eject failed');
     } finally {
@@ -203,7 +204,10 @@
   }
 
   $effect(() => {
-    loadDrives();
+    // Only load if we don't have cached data yet
+    if (!connectedDrivesState.initialized) {
+      loadConnectedDrives(true);
+    }
 
     // Subscribe to format progress events
     unsubscribeProgress = api.onFormatProgress((progress) => {
@@ -230,10 +234,10 @@
   <div class="flex justify-between items-center">
     <h1 class="text-2xl font-bold">Connected Drives</h1>
     <button class="btn btn-ghost btn-sm gap-2" onclick={loadDrives} disabled={loading || isFormatting}>
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" class:animate-spin={loading} fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
       </svg>
-      Refresh
+      {loading ? 'Refreshing...' : 'Refresh'}
     </button>
   </div>
 
@@ -305,16 +309,17 @@
     </div>
   {/if}
 
-  {#if loading}
+  {#if loading && drives.length === 0}
+    <!-- Only show full spinner if we have no cached data -->
     <div class="flex justify-center py-8">
       <span class="loading loading-spinner loading-lg"></span>
     </div>
-  {:else if error}
+  {:else if error && drives.length === 0}
     <div class="alert alert-error">
       <span>{error}</span>
       <button class="btn btn-sm" onclick={loadDrives}>Retry</button>
     </div>
-  {:else if drives.length === 0}
+  {:else if drives.length === 0 && connectedDrivesState.initialized}
     <div class="card bg-base-100 shadow">
       <div class="card-body text-center py-8 text-base-content/50">
         No USB drives detected. Connect a USB drive and click Refresh.

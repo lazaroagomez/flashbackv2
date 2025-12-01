@@ -2,6 +2,30 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+// Load environment variables from .env file
+// Check multiple possible locations for .env file
+const envPaths = [
+  path.join(__dirname, '../.env'),                    // Development: project root
+  path.join(process.resourcesPath || '', '.env'),    // Packaged: resources folder
+  path.join(process.execPath, '..', '.env'),         // Packaged: installation directory (next to exe)
+  path.join(__dirname, '.env')                       // Fallback: electron folder
+];
+
+let envLoaded = false;
+for (const envPath of envPaths) {
+  if (fs.existsSync(envPath)) {
+    require('dotenv').config({ path: envPath });
+    console.log('Loaded .env from:', envPath);
+    envLoaded = true;
+    break;
+  }
+}
+
+if (!envLoaded) {
+  console.warn('No .env file found. Checked paths:', envPaths);
+  console.warn('Copy .env.example to .env in one of these locations and configure it.');
+}
+
 // Import services (using .cjs extensions)
 const database = require('./services/database.cjs');
 const usbIdGenerator = require('./services/usbIdGenerator.cjs');

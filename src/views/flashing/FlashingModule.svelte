@@ -10,7 +10,11 @@
     stopFlashing,
     resetFlashing
   } from '../../lib/stores/flashing.svelte.js';
-  import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
+  import {
+    connectedDrivesState,
+    loadConnectedDrives,
+    refreshConnectedDrives
+  } from '../../lib/stores/connectedDrives.svelte.js';
   import Modal from '../../lib/components/Modal.svelte';
   import FlashDeviceList from './components/FlashDeviceList.svelte';
   import FlashImageSelector from './components/FlashImageSelector.svelte';
@@ -19,12 +23,14 @@
 
   let { navigate } = $props();
 
+  // Use global store for devices
+  const devices = $derived(connectedDrivesState.drives);
+  const loading = $derived(connectedDrivesState.loading);
+
   // Local state (selection, UI)
-  let devices = $state([]);
   let selectedDevices = $state([]);
   let selectedImage = $state(null);
   let imageInfo = $state(null);
-  let loading = $state(true);
   let flashSettings = $state({
     verify: true
   });
@@ -36,8 +42,6 @@
 
   // Dialogs
   let showFlashConfirm = $state(false);
-  let showFormatConfirm = $state(false);
-  let formatTarget = $state(null);
 
   // Derived
   const canStartFlash = $derived(
@@ -57,7 +61,10 @@
 
   // Initialize
   async function init() {
-    await loadDevices();
+    // Load devices if not already cached
+    if (!connectedDrivesState.initialized) {
+      await loadConnectedDrives(true);
+    }
 
     // Subscribe to flash progress events (use global store)
     unsubProgress = api.onFlashProgress((progress) => {
@@ -75,20 +82,13 @@
     if (unsubFailed) unsubFailed();
   }
 
+  // Use global store's refresh function
   async function loadDevices() {
-    loading = true;
-    try {
-      devices = await api.detectUsbDevices();
-      // Remove any selected devices that are no longer present
-      selectedDevices = selectedDevices.filter(idx =>
-        devices.some(d => d.diskIndex === idx)
-      );
-    } catch (e) {
-      showError(`Failed to detect devices: ${e.message}`);
-      devices = [];
-    } finally {
-      loading = false;
-    }
+    await refreshConnectedDrives();
+    // Remove any selected devices that are no longer present
+    selectedDevices = selectedDevices.filter(idx =>
+      connectedDrivesState.drives.some(d => d.diskIndex === idx)
+    );
   }
 
   async function handleImageSelect() {
@@ -199,35 +199,6 @@
     }
   }
 
-  function openFormatDialog(device) {
-    formatTarget = device;
-    showFormatConfirm = true;
-  }
-
-  async function handleFormat() {
-    if (!formatTarget) return;
-    showFormatConfirm = false;
-
-    const device = formatTarget;
-    formatTarget = null;
-
-    try {
-      await api.formatUsbDrive({
-        diskIndex: device.diskIndex,
-        partitionStyle: 'MBR',
-        fileSystem: 'exFAT',
-        label: device.usbId || 'USB',
-        dbId: device.dbId,
-        username: session.username
-      });
-
-      showSuccess(`${device.model} formatted successfully`);
-      await loadDevices();
-    } catch (e) {
-      showError(`Format failed: ${e.message}`);
-    }
-  }
-
   // Lifecycle
   $effect(() => {
     init();
@@ -277,7 +248,6 @@
           {selectedDevices}
           {loading}
           onToggle={handleDeviceToggle}
-          onFormat={openFormatDialog}
           onSelectAll={selectAllDevices}
           onClearAll={clearAllDevices}
         />
@@ -371,56 +341,6 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
         Start Flashing
-      </button>
-    </div>
-  </div>
-</Modal>
-
-<!-- Format Confirmation Modal -->
-<Modal bind:open={showFormatConfirm} title="Format USB Drive">
-  <div class="space-y-4">
-    <div class="alert alert-warning">
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-      </svg>
-      <div>
-        <h3 class="font-bold">Warning: Data Loss</h3>
-        <p class="text-sm">All data on this drive will be permanently erased.</p>
-      </div>
-    </div>
-
-    {#if formatTarget}
-      <div class="bg-base-200 rounded-lg p-4">
-        <h4 class="font-semibold mb-2">Drive to format:</h4>
-        <div class="flex items-center gap-2">
-          <span class="badge badge-ghost">Disk {formatTarget.diskIndex}</span>
-          {#if formatTarget.usbId}
-            <span class="font-mono text-success">{formatTarget.usbId}</span>
-          {/if}
-          <span>{formatTarget.model}</span>
-          <span class="text-base-content/60">({formatTarget.sizeGB} GB)</span>
-        </div>
-      </div>
-
-      <div class="bg-base-200 rounded-lg p-4">
-        <h4 class="font-semibold mb-2">Format settings:</h4>
-        <ul class="text-sm space-y-1">
-          <li>File System: <span class="badge badge-primary badge-sm">exFAT</span></li>
-          <li>Partition Style: <span class="badge badge-secondary badge-sm">MBR</span></li>
-          <li>Label: <span class="font-mono">{formatTarget.usbId || 'USB'}</span></li>
-        </ul>
-      </div>
-    {/if}
-
-    <div class="flex gap-3 justify-end mt-6">
-      <button class="btn btn-ghost" onclick={() => { showFormatConfirm = false; formatTarget = null; }}>
-        Cancel
-      </button>
-      <button class="btn btn-warning" onclick={handleFormat}>
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-        Format Drive
       </button>
     </div>
   </div>

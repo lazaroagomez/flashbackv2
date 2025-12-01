@@ -1,8 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)",
-      "Bash(ls -la \"d:\\gh\\flashbackv2\\static\\wusbkit\"\" 2>/dev/null || dir \"d:ghflashbackv2staticwusbkit \")"
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []

@@ -2,6 +2,7 @@
   import { session } from './lib/stores/session.svelte.js';
   import { navigation, navigate } from './lib/stores/navigation.svelte.js';
   import { applyTheme } from './lib/stores/theme.svelte.js';
+  import { initConnectedDrives } from './lib/stores/connectedDrives.svelte.js';
   import Layout from './lib/components/Layout.svelte';
   import Login from './views/Login.svelte';
   import Dashboard from './views/Dashboard.svelte';
@@ -24,6 +25,14 @@
   if (typeof window !== 'undefined') {
     window.navigate = navigate;
   }
+
+  // Initialize connected drives when user logs in (load in background)
+  $effect(() => {
+    if (session.isAuthenticated) {
+      // Load drives silently in background on app start
+      initConnectedDrives();
+    }
+  });
 </script>
 
 {#if !session.isAuthenticated}
