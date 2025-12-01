@@ -20,9 +20,7 @@
   let flashing = $state(false);
   let flashProgress = $state({});
   let flashSettings = $state({
-    verify: true,
-    partitionStyle: 'MBR',
-    fileSystem: 'exFAT'
+    verify: true
   });
 
   // Dialogs
@@ -211,8 +209,8 @@
     try {
       await api.formatUsbDrive({
         diskIndex: device.diskIndex,
-        partitionStyle: flashSettings.partitionStyle,
-        fileSystem: flashSettings.fileSystem,
+        partitionStyle: 'MBR',
+        fileSystem: 'exFAT',
         label: device.usbId || 'USB',
         dbId: device.dbId,
         username: session.username
@@ -401,8 +399,8 @@
       <div class="bg-base-200 rounded-lg p-4">
         <h4 class="font-semibold mb-2">Format settings:</h4>
         <ul class="text-sm space-y-1">
-          <li>File System: <span class="badge badge-primary badge-sm">{flashSettings.fileSystem}</span></li>
-          <li>Partition Style: <span class="badge badge-secondary badge-sm">{flashSettings.partitionStyle}</span></li>
+          <li>File System: <span class="badge badge-primary badge-sm">exFAT</span></li>
+          <li>Partition Style: <span class="badge badge-secondary badge-sm">MBR</span></li>
           <li>Label: <span class="font-mono">{formatTarget.usbId || 'USB'}</span></li>
         </ul>
       </div>
