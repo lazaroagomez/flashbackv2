@@ -19,6 +19,7 @@
   let loading = $state(true);
   let flashing = $state(false);
   let flashProgress = $state({});
+  let deviceProgress = $state({}); // Per-device progress keyed by diskIndex
   let flashSettings = $state({
     verify: true
   });
@@ -51,10 +52,42 @@
     // Subscribe to flash progress events
     unsubProgress = api.onFlashProgress((progress) => {
       flashProgress = { ...progress };
+
+      // Track per-device progress
+      if (progress.device) {
+        // Extract disk number from device path (e.g., "\\.\PhysicalDrive2" -> 2)
+        const match = progress.device.match(/PhysicalDrive(\d+)/i);
+        if (match) {
+          const diskIndex = parseInt(match[1], 10);
+          deviceProgress = {
+            ...deviceProgress,
+            [diskIndex]: {
+              type: progress.type,
+              percentage: progress.percentage || 0,
+              speed: progress.speed || 0,
+              eta: progress.eta || 0
+            }
+          };
+        }
+      }
     });
 
     unsubFailed = api.onFlashDeviceFailed(({ device, error }) => {
       showError(`Device ${device} failed: ${error}`);
+
+      // Mark device as failed in progress
+      const match = device.match(/PhysicalDrive(\d+)/i);
+      if (match) {
+        const diskIndex = parseInt(match[1], 10);
+        deviceProgress = {
+          ...deviceProgress,
+          [diskIndex]: {
+            type: 'failed',
+            percentage: 0,
+            error: error
+          }
+        };
+      }
     });
   }
 
@@ -136,6 +169,16 @@
       speed: 0,
       eta: 0
     };
+    // Initialize per-device progress
+    deviceProgress = {};
+    for (const device of selectedDeviceInfo) {
+      deviceProgress[device.diskIndex] = {
+        type: 'starting',
+        percentage: 0,
+        speed: 0,
+        eta: 0
+      };
+    }
 
     try {
       const devicePaths = selectedDeviceInfo.map(d => `\\\\.\\PhysicalDrive${d.diskIndex}`);
@@ -259,6 +302,7 @@
     <FlashProgressPanel
       progress={flashProgress}
       devices={selectedDeviceInfo}
+      {deviceProgress}
       imageName={imageInfo?.name || ''}
       onCancel={handleCancelFlash}
     />

@@ -2,6 +2,7 @@
   let {
     progress = {},
     devices = [],
+    deviceProgress = {},
     imageName = '',
     onCancel = () => {}
   } = $props();
@@ -31,9 +32,10 @@
     const labels = {
       'starting': 'Starting...',
       'decompressing': 'Decompressing...',
-      'flashing': 'Writing to disk...',
+      'flashing': 'Writing...',
       'verifying': 'Verifying...',
-      'finished': 'Complete'
+      'finished': 'Complete',
+      'failed': 'Failed'
     };
     return labels[type] || type || 'Processing...';
   }
@@ -45,11 +47,28 @@
     if (type === 'finished') {
       return 'M5 13l4 4L19 7';
     }
+    if (type === 'failed') {
+      return 'M6 18L18 6M6 6l12 12';
+    }
     return 'M13 10V3L4 14h7v7l9-11h-7z';
   }
 
-  const percentage = $derived(Math.round(progress.percentage || 0));
-  const isComplete = $derived(progress.type === 'finished' || percentage >= 100);
+  // Calculate overall progress as average of all devices
+  const overallPercentage = $derived(() => {
+    const deviceKeys = Object.keys(deviceProgress);
+    if (deviceKeys.length === 0) return Math.round(progress.percentage || 0);
+    const sum = deviceKeys.reduce((acc, key) => acc + (deviceProgress[key]?.percentage || 0), 0);
+    return Math.round(sum / deviceKeys.length);
+  });
+
+  const isComplete = $derived(progress.type === 'finished' || overallPercentage() >= 100);
+  const allDevicesComplete = $derived(
+    devices.length > 0 &&
+    devices.every(d => {
+      const dp = deviceProgress[d.diskIndex];
+      return dp?.type === 'finished' || dp?.percentage >= 100;
+    })
+  );
 </script>
 
 <div class="card bg-base-100 shadow-lg">
@@ -61,11 +80,11 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={getPhaseIcon(progress.type)} />
           </svg>
-          {getPhaseLabel(progress.type)}
+          Flashing {devices.length} Device{devices.length !== 1 ? 's' : ''}
         </h2>
         <p class="text-sm text-base-content/60 mt-1">{imageName}</p>
       </div>
-      {#if !isComplete}
+      {#if !isComplete && !allDevicesComplete}
         <button class="btn btn-error btn-sm gap-2" onclick={onCancel}>
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -75,36 +94,30 @@
       {/if}
     </div>
 
-    <!-- Overall Progress -->
-    <div class="mb-6">
-      <div class="flex justify-between items-center mb-2">
-        <span class="text-sm font-medium">Overall Progress</span>
-        <span class="text-lg font-bold font-mono">{percentage}%</span>
-      </div>
-      <progress
-        class="progress progress-primary w-full h-4"
-        value={percentage}
-        max="100"
-      ></progress>
-      <div class="flex justify-between text-xs text-base-content/60 mt-2">
-        <span>Speed: {formatSpeed(progress.speed)}</span>
-        <span>ETA: {formatEta(progress.eta)}</span>
-      </div>
-    </div>
-
-    <!-- Device Status -->
+    <!-- Per-Device Progress -->
     {#if devices.length > 0}
-      <div>
-        <h3 class="text-sm font-semibold mb-3">Device Status ({devices.length})</h3>
-        <div class="space-y-3">
-          {#each devices as device (device.diskIndex)}
-            <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+      <div class="space-y-4">
+        {#each devices as device (device.diskIndex)}
+          {@const dp = deviceProgress[device.diskIndex] || { type: 'starting', percentage: 0 }}
+          {@const devicePct = Math.round(dp.percentage || 0)}
+          {@const isDeviceComplete = dp.type === 'finished' || devicePct >= 100}
+          {@const isDeviceFailed = dp.type === 'failed'}
+
+          <div class="p-4 bg-base-200 rounded-lg">
+            <!-- Device Header -->
+            <div class="flex items-center gap-3 mb-2">
               <!-- Status icon -->
               <div class="flex-shrink-0">
-                {#if isComplete}
+                {#if isDeviceComplete}
                   <div class="w-8 h-8 rounded-full bg-success/20 flex items-center justify-center">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                {:else if isDeviceFailed}
+                  <div class="w-8 h-8 rounded-full bg-error/20 flex items-center justify-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-error" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </div>
                 {:else}
@@ -121,21 +134,47 @@
                     <span class="font-mono font-bold text-success">{device.usbId}</span>
                   {/if}
                   <span class="text-sm truncate">{device.model}</span>
+                  <span class="badge badge-ghost badge-sm">Disk {device.diskIndex}</span>
                 </div>
                 <div class="text-xs text-base-content/50">
-                  Disk {device.diskIndex} - {device.sizeGB} GB
+                  {device.sizeGB} GB
+                  {#if !isDeviceComplete && !isDeviceFailed}
+                    <span class="mx-1">•</span>
+                    <span class="text-primary">{getPhaseLabel(dp.type)}</span>
+                  {/if}
                 </div>
               </div>
 
-              <!-- Individual progress -->
-              <div class="w-24 text-right">
-                <div class="text-sm font-mono font-semibold">
-                  {isComplete ? '100%' : `${percentage}%`}
+              <!-- Percentage -->
+              <div class="text-right">
+                <div class="text-lg font-mono font-bold" class:text-success={isDeviceComplete} class:text-error={isDeviceFailed}>
+                  {isDeviceComplete ? '100%' : isDeviceFailed ? 'Failed' : `${devicePct}%`}
                 </div>
               </div>
             </div>
-          {/each}
-        </div>
+
+            <!-- Progress bar -->
+            {#if !isDeviceFailed}
+              <progress
+                class="progress w-full h-3"
+                class:progress-primary={!isDeviceComplete}
+                class:progress-success={isDeviceComplete}
+                value={devicePct}
+                max="100"
+              ></progress>
+            {:else}
+              <div class="text-sm text-error mt-1">{dp.error || 'Flash failed'}</div>
+            {/if}
+
+            <!-- Speed and ETA for active device -->
+            {#if !isDeviceComplete && !isDeviceFailed && dp.speed}
+              <div class="flex justify-between text-xs text-base-content/60 mt-2">
+                <span>Speed: {formatSpeed(dp.speed)}</span>
+                <span>ETA: {formatEta(dp.eta)}</span>
+              </div>
+            {/if}
+          </div>
+        {/each}
       </div>
     {/if}
 
