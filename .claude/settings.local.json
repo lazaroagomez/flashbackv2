@@ -1,11 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dir:*)",
-      "Bash(npm run build:*)",
-      "Bash(find:*)",
-      "Bash(git add:*)",
-      "Bash(git commit -m \"$(cat <<''EOF''\nCode quality and stability improvements\n\nCritical fixes:\n- Wrap handleSetCurrentVersion in database transaction for data integrity\n- Add missing hardware_model, hardware_serial, capacity_gb columns to schema\n- Add database connection cleanup on app shutdown (before-quit handler)\n- Remove hardcoded default credentials, add warnings for missing env vars\n\nStability fixes:\n- Add timeout cleanup in UsbDriveList to prevent memory leaks\n- Add error toast notifications to FormFields components (5 files)\n- Schedule temp PDF cleanup after 2 minutes to prevent disk space leaks\n- Use USB_DRIVE_BASE_SELECT consistently in usb:getAll handler\n\nCode organization (DRY/KISS):\n- Create generic SelectEntity component for reusable dropdown logic\n- Split UsbDriveList.svelte into sub-components (649 -> 371 lines):\n  - UsbFilterBar.svelte - filter controls\n  - UsbDriveTable.svelte - table display and selection\n- Add barrel exports for FormFields and USB components\n\nFiles modified:\n- electron/main.cjs - transaction safety, cleanup handlers, PDF cleanup\n- electron/services/database.cjs - closePool(), remove hardcoded passwords\n- electron/services/queryHelpers.cjs - add hardware columns to base select\n- flashback_usb.sql - add hardware_model, hardware_serial, capacity_gb\n- src/lib/components/FormFields/*.svelte - add error toasts\n- src/views/usb-drives/UsbDriveList.svelte - refactor with sub-components\n\nNew files:\n- src/lib/components/FormFields/SelectEntity.svelte\n- src/lib/components/FormFields/index.js\n- src/views/usb-drives/components/UsbFilterBar.svelte\n- src/views/usb-drives/components/UsbDriveTable.svelte\n- src/views/usb-drives/components/index.js\nEOF\n)\")"
+      "Bash(npm install:*)",
+      "Bash(ls -la \"d:\\gh\\flashbackv2\\static\\wusbkit\"\" 2>/dev/null || dir \"d:ghflashbackv2staticwusbkit \")"
     ],
     "deny": [],
     "ask": []

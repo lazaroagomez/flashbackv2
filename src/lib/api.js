@@ -63,6 +63,22 @@ export const api = {
   detectUsbDevices: () => window.api.detectUsbDevices(),
   bulkRegisterDrives: (commonData, hardwareList, username) => window.api.bulkRegisterDrives(toPlain(commonData), toPlain(hardwareList), username),
   formatUsbDrive: (formatData) => window.api.formatUsbDrive(toPlain(formatData)),
+  ejectUsbDevice: (identifier) => window.api.ejectUsbDevice(identifier),
+  onFormatProgress: (callback) => window.api.onFormatProgress(callback),
+
+  // USB Flashing (WUSBKit)
+  validateFlashDisk: (diskNumber) => window.api.validateFlashDisk(diskNumber),
+  getDiskPartitions: (diskNumber) => window.api.getDiskPartitions(diskNumber),
+  initFlashScanner: () => window.api.initFlashScanner(),
+  getFlashDevices: () => window.api.getFlashDevices(),
+  validateFlashImage: (imagePath) => window.api.validateFlashImage(imagePath),
+  selectFlashImage: () => window.api.selectFlashImage(),
+  startFlash: (params) => window.api.startFlash(toPlain(params)),
+  cancelFlash: () => window.api.cancelFlash(),
+  getFlashStatus: () => window.api.getFlashStatus(),
+  logFlashEvent: (data) => window.api.logFlashEvent(toPlain(data)),
+  onFlashProgress: (callback) => window.api.onFlashProgress(callback),
+  onFlashDeviceFailed: (callback) => window.api.onFlashDeviceFailed(callback),
 
   // Event Logs
   getEventLogs: (usbId) => window.api.getEventLogs(usbId),

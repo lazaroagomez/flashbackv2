@@ -34,6 +34,12 @@
     "directories": {
       "output": "dist-electron"
     },
+    "extraResources": [
+      {
+        "from": "static/wusbkit.exe",
+        "to": "wusbkit.exe"
+      }
+    ],
     "win": {
       "target": "nsis",
       "icon": "static/icon.ico"

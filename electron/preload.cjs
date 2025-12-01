@@ -55,6 +55,38 @@ contextBridge.exposeInMainWorld('api', {
   detectUsbDevices: () => ipcRenderer.invoke('usb:detect'),
   bulkRegisterDrives: (commonData, hardwareList, username) => ipcRenderer.invoke('usb:bulkRegister', commonData, hardwareList, username),
   formatUsbDrive: (formatData) => ipcRenderer.invoke('usb:format', formatData),
+  ejectUsbDevice: (identifier) => ipcRenderer.invoke('usb:eject', identifier),
+
+  // Format progress event listener
+  onFormatProgress: (callback) => {
+    const handler = (event, progress) => callback(progress);
+    ipcRenderer.on('format:progress', handler);
+    return () => ipcRenderer.removeListener('format:progress', handler);
+  },
+
+  // USB Flashing (WUSBKit)
+  validateFlashDisk: (diskNumber) => ipcRenderer.invoke('flash:validateDisk', diskNumber),
+  getDiskPartitions: (diskNumber) => ipcRenderer.invoke('flash:getDiskPartitions', diskNumber),
+  initFlashScanner: () => ipcRenderer.invoke('flash:initScanner'),
+  getFlashDevices: () => ipcRenderer.invoke('flash:getDevices'),
+  validateFlashImage: (imagePath) => ipcRenderer.invoke('flash:validateImage', imagePath),
+  selectFlashImage: () => ipcRenderer.invoke('flash:selectImage'),
+  startFlash: (params) => ipcRenderer.invoke('flash:start', params),
+  cancelFlash: () => ipcRenderer.invoke('flash:cancel'),
+  getFlashStatus: () => ipcRenderer.invoke('flash:getStatus'),
+  logFlashEvent: (data) => ipcRenderer.invoke('flash:logEvent', data),
+
+  // Flash progress event listeners (push-based updates from main process)
+  onFlashProgress: (callback) => {
+    const handler = (event, progress) => callback(progress);
+    ipcRenderer.on('flash:progress', handler);
+    return () => ipcRenderer.removeListener('flash:progress', handler);
+  },
+  onFlashDeviceFailed: (callback) => {
+    const handler = (event, data) => callback(data);
+    ipcRenderer.on('flash:deviceFailed', handler);
+    return () => ipcRenderer.removeListener('flash:deviceFailed', handler);
+  },
 
   // Event Logs
   getEventLogs: (usbId) => ipcRenderer.invoke('eventLog:getByUsb', usbId),
