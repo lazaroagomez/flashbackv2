@@ -28,3 +28,4 @@ nul
 .claude/settings.local.json
 docs/etcher-sdk-documentation.md
 docs/powershell-disk-management-guide.md
+static/wusbkit/

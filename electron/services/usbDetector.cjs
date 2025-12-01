@@ -293,31 +293,30 @@ async function formatUSBDrive(diskNumber, options = {}) {
   }
 
   // PowerShell script to format the drive
-  // Handles both RAW disks and already-initialized disks
+  // Simplified approach: always clear if not RAW, then initialize fresh
   const script = `
     $ErrorActionPreference = 'Stop'
     try {
       $disk = Get-Disk -Number ${diskNumber}
 
-      # Handle based on current partition style
-      if ($disk.PartitionStyle -eq 'RAW') {
-        # Disk is RAW, just initialize it
-        Initialize-Disk -Number ${diskNumber} -PartitionStyle ${partitionStyle}
-      } elseif ($disk.PartitionStyle -eq '${partitionStyle}') {
-        # Same partition style - just remove existing partitions
-        Get-Partition -DiskNumber ${diskNumber} -ErrorAction SilentlyContinue |
-          Where-Object { $_.Type -ne 'Reserved' } |
-          Remove-Partition -Confirm:$false -ErrorAction SilentlyContinue
-      } else {
-        # Different partition style - need to clear and reinitialize
+      # Step 1: Clear disk if not RAW (always clears to RAW state)
+      if ($disk.PartitionStyle -ne 'RAW') {
         Clear-Disk -Number ${diskNumber} -RemoveData -RemoveOEM -Confirm:$false
+        # Wait for Windows to update disk state
+        Start-Sleep -Seconds 1
+        # Refresh disk object to get updated state
+        $disk = Get-Disk -Number ${diskNumber}
+      }
+
+      # Step 2: Initialize only if disk is RAW
+      if ($disk.PartitionStyle -eq 'RAW') {
         Initialize-Disk -Number ${diskNumber} -PartitionStyle ${partitionStyle}
       }
 
-      # Create partition and get drive letter
+      # Step 3: Create partition with drive letter
       $partition = New-Partition -DiskNumber ${diskNumber} -UseMaximumSize -AssignDriveLetter
 
-      # Format the volume
+      # Step 4: Format the volume
       Format-Volume -DriveLetter $partition.DriveLetter -FileSystem ${fileSystem} -NewFileSystemLabel '${safeLabel}' -Confirm:$false | Out-Null
 
       # Return result
