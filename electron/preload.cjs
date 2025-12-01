@@ -55,8 +55,16 @@ contextBridge.exposeInMainWorld('api', {
   detectUsbDevices: () => ipcRenderer.invoke('usb:detect'),
   bulkRegisterDrives: (commonData, hardwareList, username) => ipcRenderer.invoke('usb:bulkRegister', commonData, hardwareList, username),
   formatUsbDrive: (formatData) => ipcRenderer.invoke('usb:format', formatData),
+  ejectUsbDevice: (identifier) => ipcRenderer.invoke('usb:eject', identifier),
 
-  // USB Flashing (etcher-sdk)
+  // Format progress event listener
+  onFormatProgress: (callback) => {
+    const handler = (event, progress) => callback(progress);
+    ipcRenderer.on('format:progress', handler);
+    return () => ipcRenderer.removeListener('format:progress', handler);
+  },
+
+  // USB Flashing (WUSBKit)
   validateFlashDisk: (diskNumber) => ipcRenderer.invoke('flash:validateDisk', diskNumber),
   getDiskPartitions: (diskNumber) => ipcRenderer.invoke('flash:getDiskPartitions', diskNumber),
   initFlashScanner: () => ipcRenderer.invoke('flash:initScanner'),

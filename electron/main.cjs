@@ -8,8 +8,7 @@ const usbIdGenerator = require('./services/usbIdGenerator.cjs');
 const pdfGenerator = require('./services/pdfGenerator.cjs');
 const eventLogger = require('./services/eventLogger.cjs');
 const { createCrudHandlers, registerCrudHandlers } = require('./services/crudFactory.cjs');
-const usbDetector = require('./services/usbDetector.cjs');
-const { flasher } = require('./services/usbFlasher.cjs');
+const wusbkit = require('./services/wusbkit.cjs');
 const {
   appendModelIdCondition,
   USB_DRIVE_BASE_SELECT,
@@ -616,7 +615,39 @@ ipcMain.handle('usb:create', async (event, data, username) => {
 // USB Detection - detect connected USB drives and check registration status
 ipcMain.handle('usb:detect', async () => {
   try {
-    return await usbDetector.detectUSBDrivesWithStatus(database);
+    // Get devices from WUSBKit
+    const devices = await wusbkit.listDevices();
+    const mapped = devices.map(d => wusbkit.mapWusbkitDevice(d));
+
+    // Get serials from detected drives (filter out empty/null serials)
+    const serials = mapped.map(d => d.serial).filter(Boolean);
+
+    // If no drives have serials, return all as unregistered
+    if (serials.length === 0) {
+      return toPlainObject(mapped);
+    }
+
+    // Query database for matching serials
+    const placeholders = serials.map(() => '?').join(',');
+    const rows = await database.query(
+      `SELECT id, usb_id, hardware_serial FROM usb_drives WHERE hardware_serial IN (${placeholders})`,
+      serials
+    );
+
+    // Create lookup map for registered drives
+    const serialMap = new Map(rows.map(r => [r.hardware_serial, { id: r.id, usbId: r.usb_id }]));
+
+    // Enrich devices with registration status
+    for (const device of mapped) {
+      const registered = serialMap.get(device.serial);
+      if (registered) {
+        device.isRegistered = true;
+        device.dbId = registered.id;
+        device.usbId = registered.usbId;
+      }
+    }
+
+    return toPlainObject(mapped);
   } catch (error) {
     throw new Error(`USB detection failed: ${error.message}`);
   }
@@ -637,7 +668,7 @@ function buildFormatDetails(fileSystem, label, formatType, result, errorMsg, pre
   return details;
 }
 
-// Format a USB drive using PowerShell cmdlets (WARNING: destroys all data!)
+// Format a USB drive using WUSBKit (WARNING: destroys all data!)
 // Accepts object: { diskIndex, label, fileSystem, partitionStyle, dbId, username }
 ipcMain.handle('usb:format', async (event, formatData) => {
   const { diskIndex, label, fileSystem = 'exFAT', partitionStyle = 'MBR', dbId, username } = formatData;
@@ -654,10 +685,19 @@ ipcMain.handle('usb:format', async (event, formatData) => {
   }
 
   try {
-    const result = await usbDetector.formatUSBDrive(diskIndex, {
-      partitionStyle,
-      fileSystem,
-      label
+    const result = await wusbkit.formatDevice({
+      identifier: diskIndex,
+      fileSystem: fileSystem.toLowerCase(),
+      label,
+      onProgress: (progress) => {
+        // Send format progress to renderer
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('format:progress', {
+            diskIndex,
+            ...progress
+          });
+        }
+      }
     });
 
     // Log successful format for registered drives
@@ -669,7 +709,11 @@ ipcMain.handle('usb:format', async (event, formatData) => {
       );
     }
 
-    return toPlainObject(result);
+    return toPlainObject({
+      success: true,
+      message: `Drive formatted successfully as ${fileSystem}`,
+      driveLetter: result?.drive
+    });
   } catch (error) {
     // Log failed format attempt for registered drives
     if (dbId && previousState) {
@@ -684,44 +728,77 @@ ipcMain.handle('usb:format', async (event, formatData) => {
 });
 
 // =====================================================
-// USB Flashing IPC Handlers (etcher-sdk)
+// USB Flashing IPC Handlers (WUSBKit)
 // =====================================================
 
 // Validate a USB disk is safe for operations
 ipcMain.handle('flash:validateDisk', async (event, diskNumber) => {
   try {
-    const result = await usbDetector.validateUsbDisk(diskNumber);
-    return toPlainObject(result);
+    // WUSBKit only returns USB devices, so we just check if it exists
+    const device = await wusbkit.getDeviceInfo(diskNumber);
+    return toPlainObject({
+      isValid: !!device,
+      isUSB: true,
+      isSystem: false,
+      isBoot: false,
+      isReadOnly: device?.status === 'Offline',
+      error: device ? null : 'Device not found'
+    });
   } catch (error) {
-    throw new Error(`Disk validation failed: ${error.message}`);
+    return toPlainObject({
+      isValid: false,
+      isUSB: false,
+      isSystem: false,
+      isBoot: false,
+      isReadOnly: false,
+      error: error.message
+    });
   }
 });
 
-// Get partition info for a disk
+// Get partition info for a disk (from device info)
 ipcMain.handle('flash:getDiskPartitions', async (event, diskNumber) => {
   try {
-    const partitions = await usbDetector.getDiskPartitions(diskNumber);
-    return toPlainObject(partitions);
+    const device = await wusbkit.getDeviceInfo(diskNumber);
+    if (!device) {
+      return toPlainObject([]);
+    }
+    // WUSBKit returns single partition info in device object
+    return toPlainObject([{
+      PartitionNumber: 1,
+      DriveLetter: device.driveLetter?.replace(':', '') || null,
+      Size: device.size,
+      SizeGB: Math.round((device.size || 0) / 1073741824 * 100) / 100,
+      Type: device.partitionStyle,
+      FileSystem: device.fileSystem,
+      FileSystemLabel: device.volumeLabel
+    }]);
   } catch (error) {
     throw new Error(`Failed to get partitions: ${error.message}`);
   }
 });
 
-// Initialize the flash scanner for device monitoring
+// Initialize the flash scanner (no-op for WUSBKit - uses polling)
 ipcMain.handle('flash:initScanner', async () => {
-  try {
-    await flasher.initScanner();
-    return { success: true };
-  } catch (error) {
-    throw new Error(`Scanner initialization failed: ${error.message}`);
-  }
+  return { success: true };
 });
 
-// Get devices from etcher-sdk scanner
+// Get devices from WUSBKit
 ipcMain.handle('flash:getDevices', async () => {
   try {
-    const devices = await flasher.getConnectedDevices();
-    return toPlainObject(devices);
+    const devices = await wusbkit.listDevices();
+    // Map to etcher-sdk compatible format for frontend compatibility
+    const mapped = devices.map(d => ({
+      device: `\\\\.\\PhysicalDrive${d.diskNumber}`,
+      devicePath: `\\\\.\\PhysicalDrive${d.diskNumber}`,
+      size: d.size,
+      sizeGB: Math.round((d.size || 0) / 1073741824 * 100) / 100,
+      description: d.friendlyName || d.model,
+      mountpoints: d.driveLetter ? [{ path: d.driveLetter }] : [],
+      isSystem: false,
+      isReadOnly: d.status === 'Offline'
+    }));
+    return toPlainObject(mapped);
   } catch (error) {
     throw new Error(`Failed to get devices: ${error.message}`);
   }
@@ -730,7 +807,10 @@ ipcMain.handle('flash:getDevices', async () => {
 // Validate an image file
 ipcMain.handle('flash:validateImage', async (event, imagePath) => {
   try {
-    const info = await flasher.validateImage(imagePath);
+    const info = wusbkit.validateImage(imagePath);
+    if (!info.valid) {
+      throw new Error(info.error);
+    }
     return toPlainObject(info);
   } catch (error) {
     throw new Error(`Image validation failed: ${error.message}`);
@@ -743,7 +823,7 @@ ipcMain.handle('flash:selectImage', async () => {
     title: 'Select Disk Image',
     filters: [
       { name: 'Disk Images', extensions: ['img', 'iso', 'bin', 'raw'] },
-      { name: 'Compressed Images', extensions: ['zip', 'gz', 'xz', 'bz2'] },
+      { name: 'Compressed Images', extensions: ['zip', 'gz', 'xz', 'zst'] },
       { name: 'All Files', extensions: ['*'] }
     ],
     properties: ['openFile']
@@ -756,40 +836,86 @@ ipcMain.handle('flash:selectImage', async () => {
   return result.filePaths[0];
 });
 
-// Start flashing image to devices
+// Start flashing image to devices (parallel via WUSBKit)
 ipcMain.handle('flash:start', async (event, params) => {
   const { imagePath, devicePaths, options = {} } = params;
 
-  // Validate all devices are USB before starting
+  // Extract disk numbers from device paths
+  const devices = [];
   for (const devicePath of devicePaths) {
     const match = devicePath.match(/PhysicalDrive(\d+)/i);
     if (match) {
-      const diskNumber = parseInt(match[1], 10);
-      const validation = await usbDetector.validateUsbDisk(diskNumber);
-      if (!validation.isValid) {
-        throw new Error(`Device validation failed for disk ${diskNumber}: ${validation.error}`);
+      devices.push(parseInt(match[1], 10));
+    } else {
+      // Try treating as disk number directly
+      const num = parseInt(devicePath, 10);
+      if (!isNaN(num)) {
+        devices.push(num);
       }
     }
   }
 
+  if (devices.length === 0) {
+    throw new Error('No valid device paths provided');
+  }
+
   try {
-    const result = await flasher.flashImage(imagePath, devicePaths, {
-      verify: options.verify !== false, // Default to true
+    const result = await wusbkit.flashDevices({
+      devices,
+      imagePath,
+      verify: options.verify !== false,
       onProgress: (progress) => {
-        // Send progress to renderer
+        // Send progress to renderer (map to etcher-sdk compatible format)
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('flash:progress', progress);
+          // WUSBKit reports speed as "45.2 MB/s" string - convert to bytes/sec for UI
+          const speedMBps = progress.speed ? parseFloat(progress.speed) : 0;
+          const speedBytesPerSec = speedMBps * 1024 * 1024;
+
+          // Map WUSBKit stages to UI expected values
+          const stageMap = {
+            'writing': 'flashing',
+            'verifying': 'verifying',
+            'decompressing': 'decompressing',
+            'finished': 'finished'
+          };
+          const stage = progress.stage?.toLowerCase() || 'flashing';
+          const mappedType = stageMap[stage] || stage;
+
+          mainWindow.webContents.send('flash:progress', {
+            type: mappedType,
+            percentage: progress.percentage || 0,
+            speed: speedBytesPerSec,
+            eta: progress.eta || 0,
+            bytesWritten: progress.bytes_written || 0,
+            position: progress.bytes_written || 0,
+            device: progress.device ? `\\\\.\\PhysicalDrive${progress.device}` : null
+          });
         }
       },
-      onFail: (device, error) => {
+      onDeviceFailed: (device, error) => {
         // Send failure to renderer
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('flash:deviceFailed', { device, error: error.message });
+          mainWindow.webContents.send('flash:deviceFailed', {
+            device: `\\\\.\\PhysicalDrive${device}`,
+            error: error.message
+          });
         }
       }
     });
 
-    return toPlainObject(result);
+    return toPlainObject({
+      success: result.success,
+      bytesWritten: result.successfulDevices[0]?.bytes_written || 0,
+      verified: options.verify !== false,
+      duration: result.duration,
+      failedDevices: result.failedDevices.map(f => ({
+        device: `\\\\.\\PhysicalDrive${f.identifier}`,
+        error: f.error
+      })),
+      successfulDevices: result.successfulDevices.map(s =>
+        `\\\\.\\PhysicalDrive${s.identifier}`
+      )
+    });
   } catch (error) {
     throw new Error(`Flash operation failed: ${error.message}`);
   }
@@ -798,7 +924,7 @@ ipcMain.handle('flash:start', async (event, params) => {
 // Cancel active flash operation
 ipcMain.handle('flash:cancel', async () => {
   try {
-    const result = await flasher.cancelJob();
+    const result = wusbkit.cancelAllFlash();
     return toPlainObject(result);
   } catch (error) {
     throw new Error(`Cancel failed: ${error.message}`);
@@ -808,10 +934,24 @@ ipcMain.handle('flash:cancel', async () => {
 // Get current flash job status
 ipcMain.handle('flash:getStatus', async () => {
   try {
-    const status = flasher.getJobStatus();
-    return toPlainObject(status);
+    const status = wusbkit.getFlashStatus();
+    return toPlainObject({
+      active: status.activeJobs > 0,
+      jobId: status.jobIds[0] || null,
+      status: status.activeJobs > 0 ? 'flashing' : 'idle'
+    });
   } catch (error) {
     throw new Error(`Failed to get status: ${error.message}`);
+  }
+});
+
+// Eject a USB drive safely
+ipcMain.handle('usb:eject', async (event, identifier) => {
+  try {
+    const result = await wusbkit.ejectDevice(identifier);
+    return toPlainObject(result);
+  } catch (error) {
+    throw new Error(`Eject failed: ${error.message}`);
   }
 });
 

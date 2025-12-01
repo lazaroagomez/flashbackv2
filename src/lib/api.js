@@ -63,8 +63,10 @@ export const api = {
   detectUsbDevices: () => window.api.detectUsbDevices(),
   bulkRegisterDrives: (commonData, hardwareList, username) => window.api.bulkRegisterDrives(toPlain(commonData), toPlain(hardwareList), username),
   formatUsbDrive: (formatData) => window.api.formatUsbDrive(toPlain(formatData)),
+  ejectUsbDevice: (identifier) => window.api.ejectUsbDevice(identifier),
+  onFormatProgress: (callback) => window.api.onFormatProgress(callback),
 
-  // USB Flashing (etcher-sdk)
+  // USB Flashing (WUSBKit)
   validateFlashDisk: (diskNumber) => window.api.validateFlashDisk(diskNumber),
   getDiskPartitions: (diskNumber) => window.api.getDiskPartitions(diskNumber),
   initFlashScanner: () => window.api.initFlashScanner(),
