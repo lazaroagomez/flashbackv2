@@ -1,6 +1,7 @@
 <script>
   import Sidebar from './Sidebar.svelte';
   import Toast from './Toast.svelte';
+  import FlashProgressIndicator from './FlashProgressIndicator.svelte';
   import { session, logout } from '../stores/session.svelte.js';
 
   let { currentView, navigate, children } = $props();
@@ -42,3 +43,4 @@
 </div>
 
 <Toast />
+<FlashProgressIndicator {navigate} />

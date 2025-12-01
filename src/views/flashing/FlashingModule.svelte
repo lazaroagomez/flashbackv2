@@ -2,6 +2,14 @@
   import { api } from '../../lib/api.js';
   import { session } from '../../lib/stores/session.svelte.js';
   import { showSuccess, showError, showWarning } from '../../lib/stores/toast.svelte.js';
+  import {
+    flashingState,
+    startFlashing,
+    updateFlashProgress,
+    markDeviceFailed,
+    stopFlashing,
+    resetFlashing
+  } from '../../lib/stores/flashing.svelte.js';
   import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
   import Modal from '../../lib/components/Modal.svelte';
   import FlashDeviceList from './components/FlashDeviceList.svelte';
@@ -11,18 +19,20 @@
 
   let { navigate } = $props();
 
-  // State
+  // Local state (selection, UI)
   let devices = $state([]);
   let selectedDevices = $state([]);
   let selectedImage = $state(null);
   let imageInfo = $state(null);
   let loading = $state(true);
-  let flashing = $state(false);
-  let flashProgress = $state({});
-  let deviceProgress = $state({}); // Per-device progress keyed by diskIndex
   let flashSettings = $state({
     verify: true
   });
+
+  // Use global store for flashing state
+  const flashing = $derived(flashingState.isFlashing);
+  const flashProgress = $derived(flashingState.flashProgress);
+  const deviceProgress = $derived(flashingState.deviceProgress);
 
   // Dialogs
   let showFlashConfirm = $state(false);
@@ -49,45 +59,14 @@
   async function init() {
     await loadDevices();
 
-    // Subscribe to flash progress events
+    // Subscribe to flash progress events (use global store)
     unsubProgress = api.onFlashProgress((progress) => {
-      flashProgress = { ...progress };
-
-      // Track per-device progress
-      if (progress.device) {
-        // Extract disk number from device path (e.g., "\\.\PhysicalDrive2" -> 2)
-        const match = progress.device.match(/PhysicalDrive(\d+)/i);
-        if (match) {
-          const diskIndex = parseInt(match[1], 10);
-          deviceProgress = {
-            ...deviceProgress,
-            [diskIndex]: {
-              type: progress.type,
-              percentage: progress.percentage || 0,
-              speed: progress.speed || 0,
-              eta: progress.eta || 0
-            }
-          };
-        }
-      }
+      updateFlashProgress(progress);
     });
 
     unsubFailed = api.onFlashDeviceFailed(({ device, error }) => {
       showError(`Device ${device} failed: ${error}`);
-
-      // Mark device as failed in progress
-      const match = device.match(/PhysicalDrive(\d+)/i);
-      if (match) {
-        const diskIndex = parseInt(match[1], 10);
-        deviceProgress = {
-          ...deviceProgress,
-          [diskIndex]: {
-            type: 'failed',
-            percentage: 0,
-            error: error
-          }
-        };
-      }
+      markDeviceFailed(device, error);
     });
   }
 
@@ -162,23 +141,9 @@
 
   async function handleStartFlash() {
     showFlashConfirm = false;
-    flashing = true;
-    flashProgress = {
-      type: 'starting',
-      percentage: 0,
-      speed: 0,
-      eta: 0
-    };
-    // Initialize per-device progress
-    deviceProgress = {};
-    for (const device of selectedDeviceInfo) {
-      deviceProgress[device.diskIndex] = {
-        type: 'starting',
-        percentage: 0,
-        speed: 0,
-        eta: 0
-      };
-    }
+
+    // Start flashing using global store
+    startFlashing(selectedDeviceInfo, imageInfo, selectedImage);
 
     try {
       const devicePaths = selectedDeviceInfo.map(d => `\\\\.\\PhysicalDrive${d.diskIndex}`);
@@ -216,13 +181,11 @@
       // Refresh device list
       await loadDevices();
       selectedDevices = [];
-      flashProgress = { type: 'finished', percentage: 100 };
+      stopFlashing();
 
     } catch (e) {
       showError(`Flash failed: ${e.message}`);
-      flashProgress = {};
-    } finally {
-      flashing = false;
+      resetFlashing();
     }
   }
 
@@ -230,8 +193,7 @@
     try {
       await api.cancelFlash();
       showWarning('Flash operation cancelled');
-      flashing = false;
-      flashProgress = {};
+      resetFlashing();
     } catch (e) {
       showError(`Cancel failed: ${e.message}`);
     }
@@ -301,9 +263,9 @@
   {#if flashing}
     <FlashProgressPanel
       progress={flashProgress}
-      devices={selectedDeviceInfo}
+      devices={flashingState.devices}
       {deviceProgress}
-      imageName={imageInfo?.name || ''}
+      imageName={flashingState.imageInfo?.name || ''}
       onCancel={handleCancelFlash}
     />
   {:else}

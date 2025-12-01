@@ -1,9 +1,13 @@
 <script>
   import { session, logout } from '../stores/session.svelte.js';
   import { theme, setTheme, availableThemes } from '../stores/theme.svelte.js';
+  import { flashingState, getOverallProgress } from '../stores/flashing.svelte.js';
   import { api } from '../api.js';
 
   let { currentView, navigate } = $props();
+
+  // Flashing progress for menu indicator
+  const flashProgress = $derived(getOverallProgress());
 
   let pendingCount = $state(0);
 
@@ -83,11 +87,19 @@
             class:active={currentView === item.id}
             onclick={() => navigate(item.id)}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
-              <path stroke-linecap="round" stroke-linejoin="round" d={item.icon} />
-            </svg>
+            <!-- Show spinner for Flash USB when flashing is active -->
+            {#if item.id === 'flashing' && flashingState.isFlashing}
+              <span class="loading loading-spinner loading-sm text-primary"></span>
+            {:else}
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                <path stroke-linecap="round" stroke-linejoin="round" d={item.icon} />
+              </svg>
+            {/if}
             <span class="flex-1">{item.label}</span>
-            {#if item.showBadge && pendingCount > 0}
+            <!-- Show flashing progress badge -->
+            {#if item.id === 'flashing' && flashingState.isFlashing}
+              <span class="badge badge-primary badge-sm font-mono">{flashProgress}%</span>
+            {:else if item.showBadge && pendingCount > 0}
               <span class="badge badge-warning badge-sm">{badgeCount}</span>
             {/if}
           </button>
