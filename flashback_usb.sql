@@ -74,7 +74,7 @@ CREATE TABLE `event_logs` (
   `id` bigint NOT NULL,
   `usb_id` int NOT NULL,
   `timestamp` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
-  `event_type` enum('created','assigned','reassigned','updated','marked_pending','repurpose','damaged','lost','retired','reactivated','formatted','flash') NOT NULL,
+  `event_type` enum('created','assigned','reassigned','updated','marked_pending','repurpose','damaged','lost','retired','reactivated','formatted','flash','on_hold') NOT NULL,
   `details` text NOT NULL,
   `username` varchar(100) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
@@ -1303,7 +1303,7 @@ CREATE TABLE `usb_drives` (
   `model_id` int DEFAULT NULL,
   `version_id` int NOT NULL,
   `technician_id` int DEFAULT NULL,
-  `status` enum('assigned','pending_update','damaged','lost','retired') DEFAULT 'assigned',
+  `status` enum('assigned','pending_update','damaged','lost','retired','on_hold') DEFAULT 'assigned',
   `custom_text` varchar(12) DEFAULT NULL,
   `hardware_model` varchar(100) DEFAULT NULL,
   `hardware_serial` varchar(100) DEFAULT NULL,

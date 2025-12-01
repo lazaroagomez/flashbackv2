@@ -9,6 +9,7 @@
     removeDriveFromCache
   } from '../../lib/stores/connectedDrives.svelte.js';
   import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
+  import BulkEditModal from '../../lib/components/BulkEditModal.svelte';
 
   let { navigate } = $props();
 
@@ -27,6 +28,9 @@
   let formatQueue = $state([]);
   let showBulkFormatConfirm = $state(false);
 
+  // Bulk edit state
+  let showBulkEditModal = $state(false);
+
   // Format progress state (from WUSBKit NDJSON)
   let formatProgress = $state(null);
   let unsubscribeProgress = null;
@@ -38,6 +42,13 @@
   const registeredDrives = $derived(drives.filter(d => d.isRegistered));
   const unregisteredDrives = $derived(drives.filter(d => !d.isRegistered && d.serial));
   const noSerialDrives = $derived(drives.filter(d => !d.isRegistered && !d.serial));
+
+  // Selected registered drive database IDs for bulk edit
+  const selectedRegisteredIds = $derived(
+    registeredDrives
+      .filter(d => selected.includes(d.diskIndex))
+      .map(d => d.dbId)
+  );
 
   // Use global store's refresh function
   async function loadDrives() {
@@ -56,6 +67,15 @@
 
   function toggleSelectAllUnregistered() {
     const allIndexes = unregisteredDrives.map(d => d.diskIndex);
+    if (allIndexes.every(idx => selected.includes(idx))) {
+      selected = selected.filter(idx => !allIndexes.includes(idx));
+    } else {
+      selected = [...new Set([...selected, ...allIndexes])];
+    }
+  }
+
+  function toggleSelectAllRegistered() {
+    const allIndexes = registeredDrives.map(d => d.diskIndex);
     if (allIndexes.every(idx => selected.includes(idx))) {
       selected = selected.filter(idx => !allIndexes.includes(idx));
     } else {
@@ -245,6 +265,11 @@
   {#if selected.length > 0 && !isFormatting}
     <div class="flex items-center gap-4 p-3 bg-base-200 rounded-lg">
       <span class="font-medium">{selected.length} drive{selected.length > 1 ? 's' : ''} selected</span>
+      {#if selectedRegisteredIds.length > 0}
+        <button class="btn btn-secondary btn-sm" onclick={() => showBulkEditModal = true}>
+          Bulk Edit ({selectedRegisteredIds.length})
+        </button>
+      {/if}
       {#if drives.filter(d => selected.includes(d.diskIndex) && !d.isRegistered && d.serial).length > 0}
         <button class="btn btn-primary btn-sm" onclick={handleBulkRegister}>
           Register Selected
@@ -340,7 +365,15 @@
             <table class="table">
               <thead>
                 <tr>
-                  <th></th>
+                  <th>
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-sm"
+                      checked={registeredDrives.length > 0 && registeredDrives.every(d => selected.includes(d.diskIndex))}
+                      onchange={toggleSelectAllRegistered}
+                      disabled={isFormatting}
+                    />
+                  </th>
                   <th>USB ID</th>
                   <th>Model</th>
                   <th>Serial</th>
@@ -619,4 +652,14 @@
   confirmClass="btn-error"
   onconfirm={handleBulkFormat}
   oncancel={() => showBulkFormatConfirm = false}
+/>
+
+<!-- Bulk Edit Modal -->
+<BulkEditModal
+  bind:open={showBulkEditModal}
+  selectedIds={selectedRegisteredIds}
+  onupdate={() => {
+    selected = [];
+    loadDrives();
+  }}
 />

@@ -28,15 +28,17 @@
   let expanded = $state(true);
   let selectedTypeRequiresModel = $state(false);
 
-  // Status options
+  // Status options (on_hold shown by default with active states)
   const activeStatusOptions = [
     { id: 'assigned', name: 'Assigned' },
-    { id: 'pending_update', name: 'Pending Update' }
+    { id: 'pending_update', name: 'Pending Update' },
+    { id: 'on_hold', name: 'On Hold' }
   ];
 
   const allStatusOptions = [
     { id: 'assigned', name: 'Assigned' },
     { id: 'pending_update', name: 'Pending Update' },
+    { id: 'on_hold', name: 'On Hold' },
     { id: 'lost', name: 'Lost' },
     { id: 'retired', name: 'Retired' }
   ];

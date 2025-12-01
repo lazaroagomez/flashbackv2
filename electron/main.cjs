@@ -1123,7 +1123,9 @@ ipcMain.handle('usb:update', async (event, id, data, username) => {
       const wasTerminal = terminalStates.includes(oldData.status);
       const isTerminal = terminalStates.includes(data.status);
 
-      if (isTerminal) {
+      if (data.status === 'on_hold') {
+        await eventLogger.logEvent(connection, id, 'on_hold', `Status changed to on_hold`, username);
+      } else if (isTerminal) {
         await eventLogger.logEvent(connection, id, data.status, `Status changed to ${data.status}`, username);
       } else if (wasTerminal && !isTerminal) {
         await eventLogger.logEvent(connection, id, 'reactivated',
@@ -1380,7 +1382,17 @@ ipcMain.handle('usb:bulkUpdate', async (event, usbIds, updates, username) => {
       if ('status' in updates && updates.status !== oldData.status) {
         setClauses.push('status = ?');
         params.push(updates.status);
-        changes.push({ type: 'updated', detail: `Status changed from ${oldData.status} to ${updates.status}` });
+        // Use proper event types for specific status changes
+        const terminalStates = ['lost', 'retired'];
+        let eventType = 'updated';
+        if (updates.status === 'on_hold') {
+          eventType = 'on_hold';
+        } else if (terminalStates.includes(updates.status)) {
+          eventType = updates.status;
+        } else if (terminalStates.includes(oldData.status)) {
+          eventType = 'reactivated';
+        }
+        changes.push({ type: eventType, detail: `Status changed from ${oldData.status} to ${updates.status}` });
       }
 
       if ('custom_text' in updates) {
@@ -1430,11 +1442,12 @@ ipcMain.handle('dashboard:getStats', async () => {
   }
   stats.totalUsb = Object.values(stats.byStatus).reduce((a, b) => a + b, 0);
 
-  // USB per technician
+  // USB per technician (excludes on_hold, lost, retired from count)
   stats.byTechnician = await database.query(`
     SELECT tech.name, COUNT(u.id) as count
     FROM technicians tech
     LEFT JOIN usb_drives u ON u.technician_id = tech.id
+      AND u.status NOT IN ('on_hold', 'lost', 'retired')
     WHERE tech.status = 'active'
     GROUP BY tech.id, tech.name
     ORDER BY count DESC

@@ -127,6 +127,7 @@
   const statusOptions = [
     { id: 'assigned', name: 'Assigned' },
     { id: 'pending_update', name: 'Pending Update' },
+    { id: 'on_hold', name: 'On Hold' },
     { id: 'lost', name: 'Lost' },
     { id: 'retired', name: 'Retired' }
   ];
@@ -372,6 +373,9 @@
           {/if}
           {#if usb.status !== 'pending_update'}
             <button class="btn btn-warning btn-xs" onclick={() => changeStatus('pending_update')}>Pending Update</button>
+          {/if}
+          {#if usb.status !== 'on_hold'}
+            <button class="btn btn-info btn-xs" onclick={() => changeStatus('on_hold')}>On Hold</button>
           {/if}
           {#if usb.status !== 'lost'}
             <button class="btn btn-error btn-xs" onclick={() => changeStatus('lost')}>Lost</button>
