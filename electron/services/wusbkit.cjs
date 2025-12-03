@@ -221,7 +221,7 @@ function mapWusbkitDevice(device) {
  * @returns {Promise<Array>} Array of device objects
  */
 async function listDevices() {
-  const result = await execCommand(['list', '--json']);
+  const result = await execCommand(['list', '--json'], 180000); // 180 second timeout for many devices
 
   // Handle empty array or null
   if (!result) return [];
