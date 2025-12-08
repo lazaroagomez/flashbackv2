@@ -7,6 +7,7 @@
     value = $bindable(null),
     usbTypeId = null,
     modelId = null,
+    aliasId = null,
     disabled = false,
     required = false,
     onchange
@@ -22,9 +23,11 @@
     }
     loading = true;
     try {
-      // Pass modelId as 'null' string if null, to filter for general versions
+      // If aliasId is provided, load versions by alias (ignore modelId)
+      // Otherwise, pass modelId as 'null' string if null, to filter for general versions
       // Only show active versions in dropdowns
-      versions = await api.getVersions(usbTypeId, modelId === null ? 'null' : modelId, true);
+      const effectiveModelId = aliasId ? null : (modelId === null ? 'null' : modelId);
+      versions = await api.getVersions(usbTypeId, effectiveModelId, true, aliasId);
     } catch (e) {
       console.error('Failed to load versions:', e);
       showError('Failed to load versions');
@@ -41,13 +44,18 @@
     return text;
   }
 
+  // Reload versions when dependencies change
   $effect(() => {
+    // Access dependencies to ensure tracking
+    const _typeId = usbTypeId;
+    const _modelId = modelId;
+    const _aliasId = aliasId;
     loadVersions();
   });
 
   // Reset value when dependencies change
   $effect(() => {
-    if (usbTypeId !== undefined || modelId !== undefined) {
+    if (usbTypeId !== undefined || modelId !== undefined || aliasId !== undefined) {
       value = null;
     }
   });

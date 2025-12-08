@@ -7,6 +7,7 @@
   import TechnicianWarning from '../../lib/components/TechnicianWarning.svelte';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
   import BackHeader from '../../lib/components/BackHeader.svelte';
+  import CascadingUsbSelector from '../../lib/components/FormFields/CascadingUsbSelector.svelte';
 
   let { id, navigate } = $props();
 
@@ -26,6 +27,7 @@
   let repurposeData = $state({
     platform_id: null,
     usb_type_id: null,
+    alias_id: null,
     model_id: null,
     version_id: null,
     technician_id: null,
@@ -34,15 +36,10 @@
   let saving = $state(false);
 
   // Reference data
-  let platforms = $state([]);
-  let usbTypes = $state([]);
-  let models = $state([]);
   let versions = $state([]);
   let technicians = $state([]);
 
-  // For repurpose form
-  let repurposeUsbTypes = $state([]);
-  let repurposeVersions = $state([]);
+  // Track selected type data from CascadingUsbSelector for validation
   let repurposeSelectedType = $state(null);
 
   async function loadData() {
@@ -61,17 +58,6 @@
       showError('Failed to load USB drive details');
     } finally {
       loading = false;
-    }
-  }
-
-  async function loadRepurposeData() {
-    try {
-      [platforms, models] = await Promise.all([
-        api.getPlatforms(true),
-        api.getModels(true)
-      ]);
-    } catch (e) {
-      showError('Failed to load data');
     }
   }
 
@@ -104,19 +90,17 @@
     }
   }
 
-  async function openRepurposeModal() {
-    await loadRepurposeData();
+  function openRepurposeModal() {
     repurposeData = {
       platform_id: null,
       usb_type_id: null,
+      alias_id: null,
       model_id: null,
       version_id: null,
       technician_id: usb.technician_id,
       custom_text: usb.custom_text || ''
     };
     repurposeSelectedType = null;
-    repurposeUsbTypes = [];
-    repurposeVersions = [];
     showRepurposeModal = true;
   }
 
@@ -132,12 +116,7 @@
     { id: 'retired', name: 'Retired' }
   ];
 
-  // Display function for models
-  function displayModel(m) {
-    return m.name + (m.model_number ? ` (${m.model_number})` : '');
-  }
-
-  // Display function for versions
+  // Display function for versions (used in edit modal)
   function displayVersion(v) {
     let text = v.version_code;
     if (v.is_current) text += ' (latest)';
@@ -145,43 +124,9 @@
     return text;
   }
 
-  async function handleRepurposePlatformChange(val) {
-    repurposeData.platform_id = val;
-    repurposeData.usb_type_id = null;
-    repurposeData.model_id = null;
-    repurposeData.version_id = null;
-    repurposeSelectedType = null;
-
-    if (repurposeData.platform_id) {
-      repurposeUsbTypes = await api.getUsbTypes(repurposeData.platform_id, true);
-    } else {
-      repurposeUsbTypes = [];
-    }
-    repurposeVersions = [];
-  }
-
-  async function handleRepurposeTypeChange(val) {
-    repurposeData.usb_type_id = val;
-    repurposeData.model_id = null;
-    repurposeData.version_id = null;
-    repurposeSelectedType = repurposeUsbTypes.find(t => t.id === val);
-
-    if (repurposeData.usb_type_id && !repurposeSelectedType?.requires_model) {
-      repurposeVersions = await api.getVersions(repurposeData.usb_type_id, 'null', true);
-    } else {
-      repurposeVersions = [];
-    }
-  }
-
-  async function handleRepurposeModelChange(val) {
-    repurposeData.model_id = val;
-    repurposeData.version_id = null;
-
-    if (repurposeData.usb_type_id && repurposeData.model_id) {
-      repurposeVersions = await api.getVersions(repurposeData.usb_type_id, repurposeData.model_id, true);
-    } else {
-      repurposeVersions = [];
-    }
+  // Handler for CascadingUsbSelector changes
+  function handleCascadeChange(value, entities) {
+    repurposeSelectedType = entities.usbType;
   }
 
   async function handleRepurpose(e) {
@@ -191,8 +136,14 @@
       showError('Platform, USB Type, and Version are required');
       return;
     }
-    if (repurposeSelectedType?.requires_model && !repurposeData.model_id) {
+    // Model required if type requires it AND no alias selected
+    if (repurposeSelectedType?.requires_model && !repurposeData.model_id && !repurposeData.alias_id) {
       showError('Model is required for this USB type');
+      return;
+    }
+    // For types supporting aliases: need either alias or model
+    if (repurposeSelectedType?.supports_aliases && !repurposeData.alias_id && !repurposeData.model_id) {
+      showError('Please select an alias or model');
       return;
     }
 
@@ -485,52 +436,12 @@
       <span>This will change the USB type and version. The USB ID ({usb?.usb_id}) will remain the same.</span>
     </div>
 
-    <SearchableSelect
-      bind:value={repurposeData.platform_id}
-      options={platforms}
-      label="Platform"
-      placeholder="Search platforms..."
-      required
-      onchange={handleRepurposePlatformChange}
+    <CascadingUsbSelector
+      bind:value={repurposeData}
+      mode="full"
+      layout="vertical"
+      onchange={handleCascadeChange}
     />
-
-    <div class="mt-4">
-      <SearchableSelect
-        bind:value={repurposeData.usb_type_id}
-        options={repurposeUsbTypes}
-        label="USB Type"
-        placeholder="Search USB types..."
-        required
-        disabled={!repurposeData.platform_id}
-        onchange={handleRepurposeTypeChange}
-      />
-    </div>
-
-    {#if repurposeSelectedType?.requires_model}
-      <div class="mt-4">
-        <SearchableSelect
-          bind:value={repurposeData.model_id}
-          options={models}
-          label="Model"
-          placeholder="Search models..."
-          displayFn={displayModel}
-          required
-          onchange={handleRepurposeModelChange}
-        />
-      </div>
-    {/if}
-
-    <div class="mt-4">
-      <SearchableSelect
-        bind:value={repurposeData.version_id}
-        options={repurposeVersions}
-        label="Version"
-        placeholder="Search versions..."
-        displayFn={displayVersion}
-        required
-        disabled={!repurposeData.usb_type_id || (repurposeSelectedType?.requires_model && !repurposeData.model_id)}
-      />
-    </div>
 
     <div class="mt-4">
       <SearchableSelect

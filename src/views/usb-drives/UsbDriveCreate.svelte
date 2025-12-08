@@ -3,15 +3,11 @@
   import { session } from '../../lib/stores/session.svelte.js';
   import { showSuccess, showError } from '../../lib/stores/toast.svelte.js';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
-  import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
+  import CascadingUsbSelector from '../../lib/components/FormFields/CascadingUsbSelector.svelte';
 
   let { navigate, prefill = null } = $props();
 
-  let platforms = $state([]);
-  let usbTypes = $state([]);
-  let models = $state([]);
-  let aliases = $state([]);
-  let versions = $state([]);
+  // Reference data (only technicians now - cascade handled by component)
   let technicians = $state([]);
   let loading = $state(true);
   let saving = $state(false);
@@ -21,17 +17,20 @@
   let loadingDrives = $state(false);
   let showDriveSelector = $state(false);
 
-  // Alias-related state
-  let selectedAlias = $state(null);
-  let aliasModels = $state([]); // Models in the selected alias
-  let showAliasPrompt = $state(false);
-  let pendingModelAlias = $state(null); // Alias found when user selects a model
-
-  let formData = $state({
+  // Cascade selection (handled by CascadingUsbSelector)
+  let cascadeValue = $state({
     platform_id: null,
     usb_type_id: null,
+    alias_id: null,
     model_id: null,
-    version_id: null,
+    version_id: null
+  });
+
+  // Track selected type data from CascadingUsbSelector for validation
+  let selectedType = $state(null);
+
+  // Other form fields
+  let formData = $state({
     technician_id: null,
     custom_text: '',
     hardware_model: prefill?.hardware_model || '',
@@ -39,18 +38,12 @@
     capacity_gb: prefill?.capacity_gb || null
   });
 
-  let selectedType = $state(null);
   let createdUsb = $state(null);
 
   async function loadReferenceData() {
     loading = true;
     try {
-      [platforms, technicians, models, aliases] = await Promise.all([
-        api.getPlatforms(true),
-        api.getTechnicians(true),
-        api.getModels(true),
-        api.getAliases(true)
-      ]);
+      technicians = await api.getTechnicians(true);
     } catch (e) {
       showError('Failed to load data');
     } finally {
@@ -85,163 +78,45 @@
     formData.capacity_gb = null;
   }
 
-  async function loadUsbTypes() {
-    if (!formData.platform_id) {
-      usbTypes = [];
-      return;
-    }
-    try {
-      usbTypes = await api.getUsbTypes(formData.platform_id, true);
-    } catch (e) {
-      showError('Failed to load USB types');
-    }
-  }
-
-  async function loadVersions() {
-    if (!formData.usb_type_id) {
-      versions = [];
-      return;
-    }
-    try {
-      // If alias is selected, load versions by alias
-      // Otherwise, load by model if requires_model
-      const modelId = selectedAlias ? null : (selectedType?.requires_model ? formData.model_id : null);
-      const aliasId = selectedAlias?.id || null;
-      versions = await api.getVersions(formData.usb_type_id, modelId, true, aliasId);
-    } catch (e) {
-      showError('Failed to load versions');
-    }
-  }
-
-  async function loadAliasModels(aliasId) {
-    if (!aliasId) {
-      aliasModels = [];
-      return;
-    }
-    try {
-      aliasModels = await api.getAliasModels(aliasId);
-    } catch (e) {
-      showError('Failed to load alias models');
-      aliasModels = [];
-    }
-  }
-
-  function handlePlatformChange(val) {
-    formData.platform_id = val;
-    formData.usb_type_id = null;
-    formData.model_id = null;
-    formData.version_id = null;
-    selectedType = null;
-    selectedAlias = null;
-    aliasModels = [];
-    loadUsbTypes();
-  }
-
-  function handleTypeChange(val) {
-    formData.usb_type_id = val;
-    formData.model_id = null;
-    formData.version_id = null;
-    selectedType = usbTypes.find(t => t.id === val);
-    selectedAlias = null;
-    aliasModels = [];
-    if (!selectedType?.requires_model && !selectedType?.supports_aliases) {
-      loadVersions();
-    }
-  }
-
-  async function handleAliasChange(val) {
-    const alias = aliases.find(a => a.id === val);
-    selectedAlias = alias || null;
-    formData.model_id = null;
-    formData.version_id = null;
-
-    if (alias) {
-      await loadAliasModels(alias.id);
-      await loadVersions();
-    } else {
-      aliasModels = [];
-      versions = [];
-    }
-  }
-
-  async function handleModelChange(val) {
-    formData.model_id = val;
-    formData.version_id = null;
-
-    // If USB type supports aliases and user selected a model, check if it has an alias
-    if (selectedType?.supports_aliases && val && !selectedAlias) {
-      try {
-        const modelAlias = await api.getModelAlias(val);
-        if (modelAlias) {
-          // Model has an alias - prompt user to switch to alias
-          pendingModelAlias = modelAlias;
-          showAliasPrompt = true;
-          return;
-        }
-      } catch (e) {
-        // No alias found, continue normally
-      }
-    }
-
-    loadVersions();
-  }
-
-  function confirmUseAlias() {
-    // User chose to switch to the alias
-    showAliasPrompt = false;
-    handleAliasChange(pendingModelAlias.id);
-    pendingModelAlias = null;
-  }
-
-  function skipUseAlias() {
-    // User chose to keep using the model directly
-    showAliasPrompt = false;
-    pendingModelAlias = null;
-    loadVersions();
-  }
-
-  // Display function for models
-  function displayModel(m) {
-    return m.name + (m.model_number ? ` (${m.model_number})` : '');
-  }
-
-  // Display function for versions
-  function displayVersion(v) {
-    let text = v.version_code;
-    if (v.is_current) text += ' (latest)';
-    if (v.is_legacy_valid) text += ' (legacy)';
-    return text;
+  // Handler for CascadingUsbSelector changes
+  function handleCascadeChange(value, entities) {
+    selectedType = entities.usbType;
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
 
-    if (!formData.platform_id) {
+    if (!cascadeValue.platform_id) {
       showError('Platform is required');
       return;
     }
-    if (!formData.usb_type_id) {
+    if (!cascadeValue.usb_type_id) {
       showError('USB Type is required');
       return;
     }
     // Model is required unless using alias
-    if (selectedType?.requires_model && !formData.model_id && !selectedAlias) {
+    if (selectedType?.requires_model && !cascadeValue.model_id && !cascadeValue.alias_id) {
       showError('Model is required for this USB type');
       return;
     }
     // For supports_aliases types, need either alias or model
-    if (selectedType?.supports_aliases && !selectedAlias && !formData.model_id) {
+    if (selectedType?.supports_aliases && !cascadeValue.alias_id && !cascadeValue.model_id) {
       showError('Please select an alias or model');
       return;
     }
-    if (!formData.version_id) {
+    if (!cascadeValue.version_id) {
       showError('Version is required');
       return;
     }
 
     saving = true;
     try {
-      const result = await api.createUsbDrive(formData, session.username);
+      // Combine cascade values with other form data
+      const submitData = {
+        ...cascadeValue,
+        ...formData
+      };
+      const result = await api.createUsbDrive(submitData, session.username);
       showSuccess(`USB drive ${result.usb_id} created`);
       createdUsb = result;
     } catch (e) {
@@ -263,29 +138,16 @@
 
   function createAnother() {
     createdUsb = null;
+    // Keep cascade selections, only clear hardware info
     formData = {
-      platform_id: formData.platform_id,
-      usb_type_id: formData.usb_type_id,
-      model_id: formData.model_id,
-      version_id: formData.version_id,
       technician_id: formData.technician_id,
       custom_text: formData.custom_text,
       hardware_model: '',
       hardware_serial: '',
       capacity_gb: null
     };
-    // Keep selectedAlias and aliasModels from previous selection
+    // cascadeValue is preserved automatically
   }
-
-  // Derived: models to show in dropdown
-  // If alias is selected, show only models in that alias
-  // Otherwise show all models
-  const availableModels = $derived.by(() => {
-    if (selectedAlias && aliasModels.length > 0) {
-      return aliasModels;
-    }
-    return models;
-  });
 
   $effect(() => {
     loadReferenceData();
@@ -345,77 +207,12 @@
           </div>
         {:else}
           <form onsubmit={handleSubmit}>
-            <SearchableSelect
-              bind:value={formData.platform_id}
-              options={platforms}
-              label="Platform"
-              placeholder="Search platforms..."
-              required
-              onchange={handlePlatformChange}
+            <CascadingUsbSelector
+              bind:value={cascadeValue}
+              mode="full"
+              layout="vertical"
+              onchange={handleCascadeChange}
             />
-
-            <div class="mt-4">
-              <SearchableSelect
-                bind:value={formData.usb_type_id}
-                options={usbTypes}
-                label="USB Type"
-                placeholder="Search USB types..."
-                required
-                disabled={!formData.platform_id}
-                onchange={handleTypeChange}
-              />
-            </div>
-
-            {#if selectedType?.supports_aliases}
-              <div class="mt-4">
-                <SearchableSelect
-                  value={selectedAlias?.id || null}
-                  options={aliases}
-                  label="Alias (optional)"
-                  placeholder="Search aliases..."
-                  onchange={handleAliasChange}
-                />
-                <p class="text-xs text-base-content/50 mt-1 ml-1">
-                  Select an alias to use shared versions across multiple models
-                </p>
-              </div>
-            {/if}
-
-            {#if selectedType?.requires_model || selectedType?.supports_aliases}
-              <div class="mt-4">
-                <SearchableSelect
-                  bind:value={formData.model_id}
-                  options={availableModels}
-                  label={selectedAlias ? "Model (from alias)" : "Model"}
-                  placeholder="Search models..."
-                  displayFn={displayModel}
-                  required={selectedType?.requires_model && !selectedAlias}
-                  onchange={handleModelChange}
-                />
-                {#if selectedAlias}
-                  <p class="text-xs text-base-content/50 mt-1 ml-1">
-                    Showing {aliasModels.length} model(s) in "{selectedAlias.name}" alias
-                  </p>
-                {/if}
-              </div>
-            {/if}
-
-            <div class="mt-4">
-              <SearchableSelect
-                bind:value={formData.version_id}
-                options={versions}
-                label="Version"
-                placeholder="Search versions..."
-                displayFn={displayVersion}
-                required
-                disabled={!formData.usb_type_id || (selectedType?.requires_model && !formData.model_id && !selectedAlias) || (selectedType?.supports_aliases && !selectedAlias && !formData.model_id)}
-              />
-              {#if selectedAlias && versions.length > 0}
-                <p class="text-xs text-base-content/50 mt-1 ml-1">
-                  Showing versions for alias "{selectedAlias.name}"
-                </p>
-              {/if}
-            </div>
 
             <div class="divider"></div>
 
@@ -533,15 +330,3 @@
     </div>
   {/if}
 </div>
-
-<!-- Alias Prompt Dialog -->
-<ConfirmDialog
-  open={showAliasPrompt}
-  title="Model Has an Alias"
-  message="This model belongs to the '{pendingModelAlias?.name}' alias. Using the alias will allow you to select from shared versions that apply to all {pendingModelAlias?.model_count || 0} models in the group. Would you like to use the alias instead?"
-  confirmText="Use Alias"
-  cancelText="Keep Model"
-  confirmClass="btn-primary"
-  onconfirm={confirmUseAlias}
-  oncancel={skipUseAlias}
-/>

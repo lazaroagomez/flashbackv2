@@ -4,6 +4,7 @@
   import { showSuccess, showError } from '../stores/toast.svelte.js';
   import Modal from './Modal.svelte';
   import SearchableSelect from './SearchableSelect.svelte';
+  import CascadingUsbSelector from './FormFields/CascadingUsbSelector.svelte';
 
   let {
     open = $bindable(false),
@@ -12,10 +13,6 @@
   } = $props();
 
   // Reference data
-  let platforms = $state([]);
-  let usbTypes = $state([]);
-  let models = $state([]);
-  let versions = $state([]);
   let technicians = $state([]);
   let loading = $state(false);
   let saving = $state(false);
@@ -27,16 +24,20 @@
   let changeStatus = $state(false);
   let changeCustomText = $state(false);
 
-  // Form values
-  let selectedPlatform = $state(null);
-  let selectedType = $state(null);
-  let selectedModel = $state(null);
+  // Form values - repurpose uses CascadingUsbSelector
+  let repurposeValue = $state({
+    platform_id: null,
+    usb_type_id: null,
+    alias_id: null,
+    model_id: null,
+    version_id: null
+  });
   let selectedVersion = $state(null);
   let selectedTechnician = $state(null);
   let selectedStatus = $state(null);
   let customText = $state('');
 
-  // Derived state for cascading
+  // Track selected type data from CascadingUsbSelector for validation
   let selectedTypeData = $state(null);
 
   const statusOptions = [
@@ -50,11 +51,7 @@
   async function loadReferenceData() {
     loading = true;
     try {
-      [platforms, models, technicians] = await Promise.all([
-        api.getPlatforms(true),
-        api.getModels(true),
-        api.getTechnicians(true)
-      ]);
+      technicians = await api.getTechnicians(true);
     } catch (e) {
       showError('Failed to load reference data');
     } finally {
@@ -68,16 +65,18 @@
     changeTechnician = false;
     changeStatus = false;
     changeCustomText = false;
-    selectedPlatform = null;
-    selectedType = null;
-    selectedModel = null;
+    repurposeValue = {
+      platform_id: null,
+      usb_type_id: null,
+      alias_id: null,
+      model_id: null,
+      version_id: null
+    };
     selectedVersion = null;
     selectedTechnician = null;
     selectedStatus = null;
     customText = '';
     selectedTypeData = null;
-    usbTypes = [];
-    versions = [];
   }
 
   function handleClose() {
@@ -85,58 +84,9 @@
     open = false;
   }
 
-  // Cascading handlers
-  async function handlePlatformChange(val) {
-    selectedPlatform = val;
-    selectedType = null;
-    selectedModel = null;
-    selectedVersion = null;
-    selectedTypeData = null;
-    versions = [];
-
-    if (val) {
-      usbTypes = await api.getUsbTypes(val, true);
-    } else {
-      usbTypes = [];
-    }
-  }
-
-  async function handleTypeChange(val) {
-    selectedType = val;
-    selectedModel = null;
-    selectedVersion = null;
-    selectedTypeData = usbTypes.find(t => t.id === val) || null;
-
-    if (val && !selectedTypeData?.requires_model) {
-      versions = await api.getVersions(val, 'null', true);
-    } else {
-      versions = [];
-    }
-  }
-
-  async function handleModelChange(val) {
-    selectedModel = val;
-    selectedVersion = null;
-
-    if (selectedType && val) {
-      versions = await api.getVersions(selectedType, val, true);
-    } else if (selectedType && !selectedTypeData?.requires_model) {
-      versions = await api.getVersions(selectedType, 'null', true);
-    } else {
-      versions = [];
-    }
-  }
-
-  // Display helpers
-  function displayModel(m) {
-    return m.name + (m.model_number ? ` (${m.model_number})` : '');
-  }
-
-  function displayVersion(v) {
-    let text = v.version_code;
-    if (v.is_current) text += ' (latest)';
-    if (v.is_legacy_valid) text += ' (legacy)';
-    return text;
+  // Handler for CascadingUsbSelector changes
+  function handleCascadeChange(value, entities) {
+    selectedTypeData = entities.usbType;
   }
 
   async function handleSubmit() {
@@ -144,19 +94,25 @@
 
     // Platform/Type/Model/Version change (repurpose)
     if (changePlatformType) {
-      if (!selectedPlatform || !selectedType || !selectedVersion) {
+      if (!repurposeValue.platform_id || !repurposeValue.usb_type_id || !repurposeValue.version_id) {
         showError('Platform, USB Type, and Version are required');
         return;
       }
-      if (selectedTypeData?.requires_model && !selectedModel) {
+      // Model required if type requires it AND no alias selected
+      if (selectedTypeData?.requires_model && !repurposeValue.model_id && !repurposeValue.alias_id) {
         showError('Model is required for this USB type');
         return;
       }
+      // For types supporting aliases: need either alias or model
+      if (selectedTypeData?.supports_aliases && !repurposeValue.alias_id && !repurposeValue.model_id) {
+        showError('Please select an alias or model');
+        return;
+      }
       updates.repurpose = {
-        platform_id: selectedPlatform,
-        usb_type_id: selectedType,
-        model_id: selectedModel,
-        version_id: selectedVersion
+        platform_id: repurposeValue.platform_id,
+        usb_type_id: repurposeValue.usb_type_id,
+        model_id: repurposeValue.model_id,
+        version_id: repurposeValue.version_id
       };
     }
 
@@ -200,17 +156,12 @@
   }
 
   const hasChanges = $derived(
-    changePlatformType ||
+    (changePlatformType && repurposeValue.version_id) ||
     (changeVersion && selectedVersion) ||
     changeTechnician ||
     (changeStatus && selectedStatus) ||
     changeCustomText
   );
-
-  const filteredUsbTypes = $derived.by(() => {
-    if (!selectedPlatform) return [];
-    return usbTypes;
-  });
 
   // Load data when modal opens
   $effect(() => {
@@ -219,18 +170,17 @@
     }
   });
 
-  // Reset version selection when not changing platform/type
+  // Reset repurpose selection when checkbox unchecked
   $effect(() => {
     if (!changePlatformType) {
-      selectedPlatform = null;
-      selectedType = null;
-      selectedModel = null;
+      repurposeValue = {
+        platform_id: null,
+        usb_type_id: null,
+        alias_id: null,
+        model_id: null,
+        version_id: null
+      };
       selectedTypeData = null;
-      usbTypes = [];
-      if (!changeVersion) {
-        selectedVersion = null;
-        versions = [];
-      }
     }
   });
 </script>
@@ -263,48 +213,13 @@
             </label>
 
             {#if changePlatformType}
-              <div class="grid grid-cols-2 gap-4 mt-4">
-                <div>
-                  <SearchableSelect
-                    bind:value={selectedPlatform}
-                    options={platforms}
-                    label="Platform *"
-                    placeholder="Select platform..."
-                    onchange={handlePlatformChange}
-                  />
-                </div>
-                <div>
-                  <SearchableSelect
-                    bind:value={selectedType}
-                    options={filteredUsbTypes}
-                    label="USB Type *"
-                    placeholder="Select USB type..."
-                    onchange={handleTypeChange}
-                    disabled={!selectedPlatform}
-                  />
-                </div>
-                {#if selectedTypeData?.requires_model}
-                  <div>
-                    <SearchableSelect
-                      bind:value={selectedModel}
-                      options={models}
-                      label="Model *"
-                      placeholder="Select model..."
-                      displayFn={displayModel}
-                      onchange={handleModelChange}
-                    />
-                  </div>
-                {/if}
-                <div>
-                  <SearchableSelect
-                    bind:value={selectedVersion}
-                    options={versions}
-                    label="Version *"
-                    placeholder="Select version..."
-                    displayFn={displayVersion}
-                    disabled={versions.length === 0}
-                  />
-                </div>
+              <div class="mt-4">
+                <CascadingUsbSelector
+                  bind:value={repurposeValue}
+                  mode="full"
+                  layout="grid"
+                  onchange={handleCascadeChange}
+                />
               </div>
             {/if}
           </div>
