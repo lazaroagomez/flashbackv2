@@ -1,6 +1,6 @@
 {
   "name": "flashback-usb",
-  "version": "1.3.9",
+  "version": "1.3.10",
   "type": "module",
   "description": "USB Drive Inventory Management System",
   "main": "electron/main.cjs",
