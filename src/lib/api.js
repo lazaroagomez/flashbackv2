@@ -36,9 +36,21 @@ export const api = {
   updateModel: (id, data) => window.api.updateModel(id, toPlain(data)),
   getModelUsbDrives: (modelId) => window.api.getModelUsbDrives(modelId),
 
+  // Aliases
+  getAliases: (activeOnly = false) => window.api.getAliases(activeOnly),
+  getAliasesWithCount: (activeOnly = false) => window.api.getAliasesWithCount(activeOnly),
+  getAlias: (id) => window.api.getAlias(id),
+  checkSimilarAlias: (name) => window.api.checkSimilarAlias(name),
+  createAlias: (data) => window.api.createAlias(toPlain(data)),
+  updateAlias: (id, data) => window.api.updateAlias(id, toPlain(data)),
+  getAliasModels: (aliasId) => window.api.getAliasModels(aliasId),
+  getModelAlias: (modelId) => window.api.getModelAlias(modelId),
+  addModelToAlias: (aliasId, modelId) => window.api.addModelToAlias(aliasId, modelId),
+  removeModelFromAlias: (aliasId, modelId) => window.api.removeModelFromAlias(aliasId, modelId),
+
   // Versions
-  getVersions: (usbTypeId = null, modelId = null, activeOnly = false) => window.api.getVersions(usbTypeId, modelId, activeOnly),
-  checkSimilarVersion: (versionCode, usbTypeId, modelId = null) => window.api.checkSimilarVersion(versionCode, usbTypeId, modelId),
+  getVersions: (usbTypeId = null, modelId = null, activeOnly = false, aliasId = null) => window.api.getVersions(usbTypeId, modelId, activeOnly, aliasId),
+  checkSimilarVersion: (versionCode, usbTypeId, modelId = null, aliasId = null) => window.api.checkSimilarVersion(versionCode, usbTypeId, modelId, aliasId),
   createVersion: (data) => window.api.createVersion(toPlain(data)),
   updateVersion: (id, data) => window.api.updateVersion(id, toPlain(data)),
   setCurrentVersion: (id, username) => window.api.setCurrentVersion(id, username),

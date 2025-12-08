@@ -170,14 +170,15 @@ ipcMain.handle('usbType:checkSimilar', async (event, name, platformId = null) =>
 
 ipcMain.handle('usbType:create', async (event, data) => {
   const sql = `
-    INSERT INTO usb_types (platform_id, name, requires_model, supports_legacy)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO usb_types (platform_id, name, requires_model, supports_legacy, supports_aliases)
+    VALUES (?, ?, ?, ?, ?)
   `;
   const result = await database.query(sql, [
     data.platform_id,
     data.name,
     data.requires_model || false,
-    data.supports_legacy || false
+    data.supports_legacy || false,
+    data.supports_aliases || false
   ]);
   return toPlainObject({ id: result.insertId, ...data });
 });
@@ -185,7 +186,7 @@ ipcMain.handle('usbType:create', async (event, data) => {
 ipcMain.handle('usbType:update', async (event, id, data) => {
   const sql = `
     UPDATE usb_types
-    SET platform_id = ?, name = ?, requires_model = ?, supports_legacy = ?, status = ?
+    SET platform_id = ?, name = ?, requires_model = ?, supports_legacy = ?, supports_aliases = ?, status = ?
     WHERE id = ?
   `;
   await database.query(sql, [
@@ -193,6 +194,7 @@ ipcMain.handle('usbType:update', async (event, id, data) => {
     data.name,
     data.requires_model,
     data.supports_legacy,
+    data.supports_aliases,
     data.status,
     id
   ]);
@@ -232,17 +234,92 @@ ipcMain.handle('model:getUsbDrives', async (event, modelId) => {
 });
 
 // =====================================================
+// Alias IPC Handlers (using CRUD factory)
+// =====================================================
+const aliasHandlers = createCrudHandlers({
+  tableName: 'aliases',
+  entityName: 'alias',
+  createColumns: ['name', 'notes'],
+  updateColumns: ['name', 'notes', 'status'],
+  similarSelectColumns: ['id', 'name']
+});
+registerCrudHandlers(ipcMain, 'alias', aliasHandlers);
+
+// Get all models in an alias (with model details)
+ipcMain.handle('alias:getModels', async (event, aliasId) => {
+  const sql = `
+    SELECT m.*, am.created_at as added_at
+    FROM alias_models am
+    JOIN models m ON am.model_id = m.id
+    WHERE am.alias_id = ?
+    ORDER BY m.name
+  `;
+  return database.query(sql, [aliasId]);
+});
+
+// Get alias for a specific model (if any)
+ipcMain.handle('alias:getByModel', async (event, modelId) => {
+  const sql = `
+    SELECT a.*
+    FROM aliases a
+    JOIN alias_models am ON a.id = am.alias_id
+    WHERE am.model_id = ?
+  `;
+  return database.queryOne(sql, [modelId]);
+});
+
+// Add a model to an alias
+ipcMain.handle('alias:addModel', async (event, aliasId, modelId) => {
+  // Check if model is already in another alias
+  const existing = await database.queryOne(
+    'SELECT a.name FROM alias_models am JOIN aliases a ON am.alias_id = a.id WHERE am.model_id = ?',
+    [modelId]
+  );
+  if (existing) {
+    throw new Error(`Model is already assigned to alias "${existing.name}"`);
+  }
+
+  const sql = 'INSERT INTO alias_models (alias_id, model_id) VALUES (?, ?)';
+  const result = await database.query(sql, [aliasId, modelId]);
+  return toPlainObject({ id: result.insertId, alias_id: aliasId, model_id: modelId });
+});
+
+// Remove a model from an alias
+ipcMain.handle('alias:removeModel', async (event, aliasId, modelId) => {
+  const sql = 'DELETE FROM alias_models WHERE alias_id = ? AND model_id = ?';
+  await database.query(sql, [aliasId, modelId]);
+  return toPlainObject({ success: true });
+});
+
+// Get all aliases with their model count
+ipcMain.handle('alias:getAllWithCount', async (event, activeOnly = false) => {
+  let sql = `
+    SELECT a.*, COUNT(am.model_id) as model_count
+    FROM aliases a
+    LEFT JOIN alias_models am ON a.id = am.alias_id
+  `;
+  if (activeOnly) {
+    sql += " WHERE a.status = 'active'";
+  }
+  sql += ' GROUP BY a.id ORDER BY a.name';
+  return database.query(sql);
+});
+
+// =====================================================
 // Version IPC Handlers
 // =====================================================
-ipcMain.handle('version:getAll', async (event, usbTypeId = null, modelId = null, activeOnly = false) => {
+ipcMain.handle('version:getAll', async (event, usbTypeId = null, modelId = null, activeOnly = false, aliasId = null) => {
   let sql = `
     SELECT v.*,
            t.name as usb_type_name,
            t.requires_model,
-           m.name as model_name
+           t.supports_aliases,
+           m.name as model_name,
+           a.name as alias_name
     FROM versions v
     JOIN usb_types t ON v.usb_type_id = t.id
     LEFT JOIN models m ON v.model_id = m.id
+    LEFT JOIN aliases a ON v.alias_id = a.id
     WHERE 1=1
   `;
   const params = [];
@@ -250,6 +327,14 @@ ipcMain.handle('version:getAll', async (event, usbTypeId = null, modelId = null,
   if (usbTypeId) {
     sql += ' AND v.usb_type_id = ?';
     params.push(usbTypeId);
+  }
+  if (aliasId !== null) {
+    if (aliasId === 'null') {
+      sql += ' AND v.alias_id IS NULL';
+    } else {
+      sql += ' AND v.alias_id = ?';
+      params.push(aliasId);
+    }
   }
   if (modelId !== null) {
     if (modelId === 'null') {
@@ -262,20 +347,26 @@ ipcMain.handle('version:getAll', async (event, usbTypeId = null, modelId = null,
   if (activeOnly) {
     sql += " AND v.status = 'active'";
   }
-  sql += ' ORDER BY t.name, m.name, v.version_code';
+  sql += ' ORDER BY t.name, COALESCE(a.name, m.name), v.version_code';
 
   return database.query(sql, params);
 });
 
-ipcMain.handle('version:checkSimilar', async (event, versionCode, usbTypeId, modelId = null) => {
+ipcMain.handle('version:checkSimilar', async (event, versionCode, usbTypeId, modelId = null, aliasId = null) => {
   let sql = 'SELECT id, version_code FROM versions WHERE usb_type_id = ?';
   const params = [usbTypeId];
-  if (modelId) {
+
+  // Check based on alias or model
+  if (aliasId) {
+    sql += ' AND alias_id = ?';
+    params.push(aliasId);
+  } else if (modelId) {
     sql += ' AND model_id = ?';
     params.push(modelId);
   } else {
-    sql += ' AND model_id IS NULL';
+    sql += ' AND model_id IS NULL AND alias_id IS NULL';
   }
+
   const versions = await database.query(sql, params);
   const similar = versions.filter(v => namesAreSimilar(v.version_code, versionCode));
   return toPlainObject(similar);
@@ -283,12 +374,13 @@ ipcMain.handle('version:checkSimilar', async (event, versionCode, usbTypeId, mod
 
 ipcMain.handle('version:create', async (event, data) => {
   const sql = `
-    INSERT INTO versions (usb_type_id, model_id, version_code, is_current, is_legacy_valid, official_link, internal_link, comments)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO versions (usb_type_id, model_id, alias_id, version_code, is_current, is_legacy_valid, official_link, internal_link, comments)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `;
   const result = await database.query(sql, [
     data.usb_type_id,
     data.model_id || null,
+    data.alias_id || null,
     data.version_code,
     data.is_current || false,
     data.is_legacy_valid || false,
@@ -299,7 +391,7 @@ ipcMain.handle('version:create', async (event, data) => {
 
   // If marked as current, trigger cascade logic
   if (data.is_current) {
-    await handleSetCurrentVersion(result.insertId, data.usb_type_id, data.model_id);
+    await handleSetCurrentVersion(result.insertId, data.usb_type_id, data.model_id, data.alias_id);
   }
 
   return toPlainObject({ id: result.insertId, ...data });
@@ -341,22 +433,35 @@ ipcMain.handle('version:setCurrent', async (event, id, username) => {
   const version = await database.queryOne('SELECT * FROM versions WHERE id = ?', [id]);
   if (!version) throw new Error('Version not found');
 
-  await handleSetCurrentVersion(id, version.usb_type_id, version.model_id, username);
+  await handleSetCurrentVersion(id, version.usb_type_id, version.model_id, version.alias_id, username);
   return toPlainObject({ success: true });
 });
 
-async function handleSetCurrentVersion(versionId, usbTypeId, modelId, username = 'System') {
+async function handleSetCurrentVersion(versionId, usbTypeId, modelId, aliasId = null, username = 'System') {
   // Wrap entire cascade operation in a transaction for data integrity
   return database.withTransaction(async (connection) => {
-    // Unset previous current version for this type/model combination
+    // Get all model IDs if this is an alias-based version
+    let aliasModelIds = [];
+    if (aliasId) {
+      const [aliasModels] = await connection.execute(
+        'SELECT model_id FROM alias_models WHERE alias_id = ?',
+        [aliasId]
+      );
+      aliasModelIds = aliasModels.map(m => m.model_id);
+    }
+
+    // Unset previous current version for this type/model or type/alias combination
     let unsql = 'UPDATE versions SET is_current = FALSE WHERE usb_type_id = ? AND is_current = TRUE';
     const unparams = [usbTypeId];
 
-    if (modelId) {
+    if (aliasId) {
+      unsql += ' AND alias_id = ?';
+      unparams.push(aliasId);
+    } else if (modelId) {
       unsql += ' AND model_id = ?';
       unparams.push(modelId);
     } else {
-      unsql += ' AND model_id IS NULL';
+      unsql += ' AND model_id IS NULL AND alias_id IS NULL';
     }
 
     await connection.execute(unsql, unparams);
@@ -370,6 +475,22 @@ async function handleSetCurrentVersion(versionId, usbTypeId, modelId, username =
     // Get the new current version's created_at to compare
     const [[currentVersion]] = await connection.execute('SELECT created_at FROM versions WHERE id = ?', [versionId]);
 
+    // Build model condition for cascade queries
+    let modelCondition = '';
+    let modelParams = [];
+
+    if (aliasId && aliasModelIds.length > 0) {
+      // For alias-based versions, cascade to ALL models in the alias
+      const placeholders = aliasModelIds.map(() => '?').join(',');
+      modelCondition = ` AND u.model_id IN (${placeholders})`;
+      modelParams = aliasModelIds;
+    } else if (modelId) {
+      modelCondition = ' AND u.model_id = ?';
+      modelParams = [modelId];
+    } else {
+      modelCondition = ' AND u.model_id IS NULL';
+    }
+
     // Cascade: Mark USB drives as pending_update only if they have OLDER versions
     // A version is considered older if it was created before the new current version
     let cascadeSql = `
@@ -381,15 +502,8 @@ async function handleSetCurrentVersion(versionId, usbTypeId, modelId, username =
       AND v.is_legacy_valid = FALSE
       AND v.created_at < ?
       AND u.status NOT IN ('lost', 'retired')
-    `;
-    const cascadeParams = [usbTypeId, versionId, currentVersion.created_at];
-
-    if (modelId) {
-      cascadeSql += ' AND u.model_id = ?';
-      cascadeParams.push(modelId);
-    } else {
-      cascadeSql += ' AND u.model_id IS NULL';
-    }
+    ` + modelCondition;
+    const cascadeParams = [usbTypeId, versionId, currentVersion.created_at, ...modelParams];
 
     const [drivesToUpdate] = await connection.execute(cascadeSql, cascadeParams);
 
@@ -424,15 +538,8 @@ async function handleSetCurrentVersion(versionId, usbTypeId, modelId, username =
       AND u.version_id != ?
       AND v.created_at > ?
       AND u.status = 'pending_update'
-    `;
-    const clearParams = [usbTypeId, versionId, currentVersion.created_at];
-
-    if (modelId) {
-      clearPendingSql += ' AND u.model_id = ?';
-      clearParams.push(modelId);
-    } else {
-      clearPendingSql += ' AND u.model_id IS NULL';
-    }
+    ` + modelCondition;
+    const clearParams = [usbTypeId, versionId, currentVersion.created_at, ...modelParams];
 
     const [drivesToClear] = await connection.execute(clearPendingSql, clearParams);
 
@@ -462,15 +569,8 @@ async function handleSetCurrentVersion(versionId, usbTypeId, modelId, username =
       WHERE u.usb_type_id = ?
       AND u.version_id = ?
       AND u.status = 'pending_update'
-    `;
-    const clearCurrentParams = [usbTypeId, versionId];
-
-    if (modelId) {
-      clearCurrentSql += ' AND u.model_id = ?';
-      clearCurrentParams.push(modelId);
-    } else {
-      clearCurrentSql += ' AND u.model_id IS NULL';
-    }
+    ` + modelCondition;
+    const clearCurrentParams = [usbTypeId, versionId, ...modelParams];
 
     const [drivesWithCurrentVersion] = await connection.execute(clearCurrentSql, clearCurrentParams);
 

@@ -1125,6 +1125,33 @@ INSERT INTO `models` (`id`, `name`, `model_number`, `notes`, `status`, `created_
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `aliases`
+--
+
+CREATE TABLE `aliases` (
+  `id` int NOT NULL,
+  `name` varchar(100) NOT NULL,
+  `notes` text,
+  `status` enum('active','inactive') DEFAULT 'active',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `alias_models`
+--
+
+CREATE TABLE `alias_models` (
+  `id` int NOT NULL,
+  `alias_id` int NOT NULL,
+  `model_id` int NOT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `platforms`
 --
 
@@ -1354,6 +1381,7 @@ CREATE TABLE `usb_types` (
   `name` varchar(100) NOT NULL,
   `requires_model` tinyint(1) DEFAULT '0',
   `supports_legacy` tinyint(1) DEFAULT '0',
+  `supports_aliases` tinyint(1) DEFAULT '0',
   `status` enum('active','inactive') DEFAULT 'active',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci;
@@ -1362,12 +1390,12 @@ CREATE TABLE `usb_types` (
 -- Dumping data for table `usb_types`
 --
 
-INSERT INTO `usb_types` (`id`, `platform_id`, `name`, `requires_model`, `supports_legacy`, `status`, `created_at`) VALUES
-(1, 1, 'RECOVERY', 1, 1, 'active', '2025-11-27 20:54:07'),
-(2, 1, 'RMA_SHIM', 1, 0, 'active', '2025-11-27 20:54:19'),
-(3, 1, 'CPTI', 1, 0, 'active', '2025-11-27 20:54:27'),
-(4, 2, 'WTP', 0, 0, 'active', '2025-11-27 20:54:43'),
-(5, 3, 'EDT', 0, 0, 'active', '2025-11-27 23:19:09');
+INSERT INTO `usb_types` (`id`, `platform_id`, `name`, `requires_model`, `supports_legacy`, `supports_aliases`, `status`, `created_at`) VALUES
+(1, 1, 'RECOVERY', 1, 1, 0, 'active', '2025-11-27 20:54:07'),
+(2, 1, 'RMA_SHIM', 1, 0, 0, 'active', '2025-11-27 20:54:19'),
+(3, 1, 'CPTI', 1, 0, 0, 'active', '2025-11-27 20:54:27'),
+(4, 2, 'WTP', 0, 0, 0, 'active', '2025-11-27 20:54:43'),
+(5, 3, 'EDT', 0, 0, 0, 'active', '2025-11-27 23:19:09');
 
 -- --------------------------------------------------------
 
@@ -1379,6 +1407,7 @@ CREATE TABLE `versions` (
   `id` int NOT NULL,
   `usb_type_id` int NOT NULL,
   `model_id` int DEFAULT NULL,
+  `alias_id` int DEFAULT NULL,
   `version_code` varchar(100) NOT NULL,
   `is_current` tinyint(1) DEFAULT '0',
   `is_legacy_valid` tinyint(1) DEFAULT '0',
@@ -1393,12 +1422,12 @@ CREATE TABLE `versions` (
 -- Dumping data for table `versions`
 --
 
-INSERT INTO `versions` (`id`, `usb_type_id`, `model_id`, `version_code`, `is_current`, `is_legacy_valid`, `official_link`, `internal_link`, `comments`, `created_at`, `marked_current_at`) VALUES
-(1, 3, 1, 'v128', 0, 0, '', '', '', '2025-11-27 21:02:36', '2025-11-27 22:29:32'),
-(2, 3, 1, 'v129', 1, 0, NULL, NULL, NULL, '2025-11-27 21:49:40', '2025-11-27 22:29:42'),
-(3, 4, NULL, '112725', 0, 0, NULL, NULL, NULL, '2025-11-27 21:59:08', '2025-11-27 21:59:09'),
-(4, 4, NULL, '112726', 1, 0, NULL, NULL, NULL, '2025-11-27 22:35:11', '2025-11-27 22:35:11'),
-(5, 3, 84, 'test version', 1, 0, NULL, NULL, NULL, '2025-11-28 04:37:10', '2025-11-28 04:37:10');
+INSERT INTO `versions` (`id`, `usb_type_id`, `model_id`, `alias_id`, `version_code`, `is_current`, `is_legacy_valid`, `official_link`, `internal_link`, `comments`, `created_at`, `marked_current_at`) VALUES
+(1, 3, 1, NULL, 'v128', 0, 0, '', '', '', '2025-11-27 21:02:36', '2025-11-27 22:29:32'),
+(2, 3, 1, NULL, 'v129', 1, 0, NULL, NULL, NULL, '2025-11-27 21:49:40', '2025-11-27 22:29:42'),
+(3, 4, NULL, NULL, '112725', 0, 0, NULL, NULL, NULL, '2025-11-27 21:59:08', '2025-11-27 21:59:09'),
+(4, 4, NULL, NULL, '112726', 1, 0, NULL, NULL, NULL, '2025-11-27 22:35:11', '2025-11-27 22:35:11'),
+(5, 3, 84, NULL, 'test version', 1, 0, NULL, NULL, NULL, '2025-11-28 04:37:10', '2025-11-28 04:37:10');
 
 -- --------------------------------------------------------
 
@@ -1480,11 +1509,27 @@ ALTER TABLE `event_logs`
   ADD KEY `idx_event_type` (`event_type`);
 
 --
+-- Indexes for table `aliases`
+--
+ALTER TABLE `aliases`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_alias_name` (`name`),
+  ADD KEY `idx_status` (`status`);
+
+--
+-- Indexes for table `alias_models`
+--
+ALTER TABLE `alias_models`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `unique_model` (`model_id`),
+  ADD KEY `idx_alias` (`alias_id`);
+
+--
 -- Indexes for table `models`
 --
 ALTER TABLE `models`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `unique_model` (`name`,`model_number`),
+  ADD UNIQUE KEY `unique_model_name` (`name`,`model_number`),
   ADD KEY `idx_status` (`status`);
 
 --
@@ -1538,10 +1583,12 @@ ALTER TABLE `usb_types`
 --
 ALTER TABLE `versions`
   ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `unique_version` (`usb_type_id`,`model_id`,`version_code`),
+  ADD UNIQUE KEY `unique_version` (`usb_type_id`,`model_id`,`alias_id`,`version_code`),
   ADD KEY `model_id` (`model_id`),
+  ADD KEY `alias_id` (`alias_id`),
   ADD KEY `idx_type_current` (`usb_type_id`,`is_current`),
-  ADD KEY `idx_type_model` (`usb_type_id`,`model_id`);
+  ADD KEY `idx_type_model` (`usb_type_id`,`model_id`),
+  ADD KEY `idx_type_alias` (`usb_type_id`,`alias_id`);
 
 --
 -- AUTO_INCREMENT for dumped tables
@@ -1552,6 +1599,18 @@ ALTER TABLE `versions`
 --
 ALTER TABLE `event_logs`
   MODIFY `id` bigint NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=145;
+
+--
+-- AUTO_INCREMENT for table `aliases`
+--
+ALTER TABLE `aliases`
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
+-- AUTO_INCREMENT for table `alias_models`
+--
+ALTER TABLE `alias_models`
+  MODIFY `id` int NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --
 -- AUTO_INCREMENT for table `models`
@@ -1643,11 +1702,19 @@ ALTER TABLE `usb_types`
   ADD CONSTRAINT `usb_types_ibfk_1` FOREIGN KEY (`platform_id`) REFERENCES `platforms` (`id`);
 
 --
+-- Constraints for table `alias_models`
+--
+ALTER TABLE `alias_models`
+  ADD CONSTRAINT `alias_models_ibfk_1` FOREIGN KEY (`alias_id`) REFERENCES `aliases` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `alias_models_ibfk_2` FOREIGN KEY (`model_id`) REFERENCES `models` (`id`) ON DELETE CASCADE;
+
+--
 -- Constraints for table `versions`
 --
 ALTER TABLE `versions`
   ADD CONSTRAINT `versions_ibfk_1` FOREIGN KEY (`usb_type_id`) REFERENCES `usb_types` (`id`),
-  ADD CONSTRAINT `versions_ibfk_2` FOREIGN KEY (`model_id`) REFERENCES `models` (`id`);
+  ADD CONSTRAINT `versions_ibfk_2` FOREIGN KEY (`model_id`) REFERENCES `models` (`id`),
+  ADD CONSTRAINT `versions_ibfk_3` FOREIGN KEY (`alias_id`) REFERENCES `aliases` (`id`) ON DELETE SET NULL;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

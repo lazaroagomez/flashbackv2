@@ -28,9 +28,21 @@ contextBridge.exposeInMainWorld('api', {
   updateModel: (id, data) => ipcRenderer.invoke('model:update', id, data),
   getModelUsbDrives: (modelId) => ipcRenderer.invoke('model:getUsbDrives', modelId),
 
+  // Aliases
+  getAliases: (activeOnly) => ipcRenderer.invoke('alias:getAll', activeOnly),
+  getAliasesWithCount: (activeOnly) => ipcRenderer.invoke('alias:getAllWithCount', activeOnly),
+  getAlias: (id) => ipcRenderer.invoke('alias:getOne', id),
+  checkSimilarAlias: (name) => ipcRenderer.invoke('alias:checkSimilar', name),
+  createAlias: (data) => ipcRenderer.invoke('alias:create', data),
+  updateAlias: (id, data) => ipcRenderer.invoke('alias:update', id, data),
+  getAliasModels: (aliasId) => ipcRenderer.invoke('alias:getModels', aliasId),
+  getModelAlias: (modelId) => ipcRenderer.invoke('alias:getByModel', modelId),
+  addModelToAlias: (aliasId, modelId) => ipcRenderer.invoke('alias:addModel', aliasId, modelId),
+  removeModelFromAlias: (aliasId, modelId) => ipcRenderer.invoke('alias:removeModel', aliasId, modelId),
+
   // Versions
-  getVersions: (usbTypeId, modelId, activeOnly) => ipcRenderer.invoke('version:getAll', usbTypeId, modelId, activeOnly),
-  checkSimilarVersion: (versionCode, usbTypeId, modelId) => ipcRenderer.invoke('version:checkSimilar', versionCode, usbTypeId, modelId),
+  getVersions: (usbTypeId, modelId, activeOnly, aliasId) => ipcRenderer.invoke('version:getAll', usbTypeId, modelId, activeOnly, aliasId),
+  checkSimilarVersion: (versionCode, usbTypeId, modelId, aliasId) => ipcRenderer.invoke('version:checkSimilar', versionCode, usbTypeId, modelId, aliasId),
   createVersion: (data) => ipcRenderer.invoke('version:create', data),
   updateVersion: (id, data) => ipcRenderer.invoke('version:update', id, data),
   setCurrentVersion: (id, username) => ipcRenderer.invoke('version:setCurrent', id, username),

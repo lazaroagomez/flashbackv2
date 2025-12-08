@@ -21,6 +21,7 @@
     name: '',
     requires_model: false,
     supports_legacy: false,
+    supports_aliases: false,
     status: 'active'
   });
   let saving = $state(false);
@@ -51,6 +52,7 @@
       name: '',
       requires_model: false,
       supports_legacy: false,
+      supports_aliases: false,
       status: 'active'
     };
     showModal = true;
@@ -63,6 +65,7 @@
       name: type.name,
       requires_model: type.requires_model,
       supports_legacy: type.supports_legacy,
+      supports_aliases: type.supports_aliases,
       status: type.status
     };
     showModal = true;
@@ -172,6 +175,7 @@
                 <th>Platform</th>
                 <th>Requires Model</th>
                 <th>Supports Legacy</th>
+                <th>Supports Aliases</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -190,6 +194,13 @@
                   </td>
                   <td>
                     {#if type.supports_legacy}
+                      <span class="badge badge-info badge-sm">Yes</span>
+                    {:else}
+                      <span class="text-base-content/50">No</span>
+                    {/if}
+                  </td>
+                  <td>
+                    {#if type.supports_aliases}
                       <span class="badge badge-info badge-sm">Yes</span>
                     {:else}
                       <span class="text-base-content/50">No</span>
@@ -251,6 +262,16 @@
       </label>
       <label class="label">
         <span class="label-text-alt text-base-content/50">If checked, versions can be marked as "legacy valid" to prevent pending update status</span>
+      </label>
+    </div>
+
+    <div class="form-control mt-2">
+      <label class="label cursor-pointer justify-start gap-3">
+        <input type="checkbox" class="checkbox" bind:checked={formData.supports_aliases} />
+        <span class="label-text">Supports Aliases</span>
+      </label>
+      <label class="label">
+        <span class="label-text-alt text-base-content/50">If checked, models can be grouped into aliases to share versions</span>
       </label>
     </div>
 

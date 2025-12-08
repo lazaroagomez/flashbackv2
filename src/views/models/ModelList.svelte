@@ -6,6 +6,7 @@
   import StatusBadge from '../../lib/components/StatusBadge.svelte';
   import SearchableSelect from '../../lib/components/SearchableSelect.svelte';
   import { createBulkImport } from '../../lib/utils/bulkImport.svelte.js';
+  import AliasList from './AliasList.svelte';
 
   let { navigate } = $props();
 
@@ -13,6 +14,12 @@
     { id: 'active', name: 'Active' },
     { id: 'inactive', name: 'Inactive' }
   ];
+
+  // Tab state
+  let activeTab = $state('models');
+
+  // Search state
+  let searchQuery = $state('');
 
   let models = $state([]);
   let loading = $state(true);
@@ -167,6 +174,17 @@
     }
   });
 
+  // Filtered models based on search query
+  const filteredModels = $derived.by(() => {
+    if (!searchQuery.trim()) return models;
+    const query = searchQuery.toLowerCase().trim();
+    return models.filter(m =>
+      m.name.toLowerCase().includes(query) ||
+      (m.model_number && m.model_number.toLowerCase().includes(query)) ||
+      (m.notes && m.notes.toLowerCase().includes(query))
+    );
+  });
+
   $effect(() => {
     loadModels();
   });
@@ -174,66 +192,116 @@
 
 <div class="space-y-6">
   <div class="flex justify-between items-center">
-    <h1 class="text-2xl font-bold">Models</h1>
-    <div class="dropdown dropdown-end">
-      <div tabindex="0" role="button" class="btn btn-primary">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        Add Model
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-        </svg>
+    <h1 class="text-2xl font-bold">Models & Aliases</h1>
+    {#if activeTab === 'models'}
+      <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button" class="btn btn-primary">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+          </svg>
+          Add Model
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+        <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+          <li><button onclick={openCreateModal}>Single Model</button></li>
+          <li><button onclick={openBulkModal}>Bulk Import</button></li>
+        </ul>
       </div>
-      <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
-        <li><button onclick={openCreateModal}>Single Model</button></li>
-        <li><button onclick={openBulkModal}>Bulk Import</button></li>
-      </ul>
-    </div>
+    {/if}
   </div>
 
-  <div class="card bg-base-100 shadow">
-    <div class="card-body">
-      {#if loading}
-        <div class="flex justify-center py-8">
-          <span class="loading loading-spinner loading-lg"></span>
-        </div>
-      {:else if models.length === 0}
-        <div class="text-center py-8 text-base-content/50">
-          No models found. Create one to get started.
-        </div>
-      {:else}
-        <div class="overflow-x-auto">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Model Number</th>
-                <th>Notes</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each models as model}
-                <tr class="hover cursor-pointer" onclick={() => viewDetail(model)}>
-                  <td class="font-medium">{model.name}</td>
-                  <td>{model.model_number || '-'}</td>
-                  <td class="max-w-xs truncate">{model.notes || '-'}</td>
-                  <td><StatusBadge status={model.status} /></td>
-                  <td>
-                    <button class="btn btn-ghost btn-sm" onclick={(e) => openEditModal(model, e)}>
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {/if}
-    </div>
+  <!-- Tabs -->
+  <div role="tablist" class="tabs tabs-boxed w-fit">
+    <button
+      role="tab"
+      class="tab"
+      class:tab-active={activeTab === 'models'}
+      onclick={() => activeTab = 'models'}
+    >
+      Models
+    </button>
+    <button
+      role="tab"
+      class="tab"
+      class:tab-active={activeTab === 'aliases'}
+      onclick={() => activeTab = 'aliases'}
+    >
+      Aliases
+    </button>
   </div>
+
+  {#if activeTab === 'models'}
+    <div class="card bg-base-100 shadow">
+      <div class="card-body">
+        <!-- Search box -->
+        <div class="flex gap-4 mb-4">
+          <div class="form-control w-full max-w-md">
+            <input
+              type="text"
+              class="input input-bordered"
+              placeholder="Search models by name, number, or notes..."
+              bind:value={searchQuery}
+            />
+          </div>
+          {#if searchQuery}
+            <button class="btn btn-ghost btn-sm" onclick={() => searchQuery = ''}>
+              Clear
+            </button>
+          {/if}
+        </div>
+
+        {#if loading}
+          <div class="flex justify-center py-8">
+            <span class="loading loading-spinner loading-lg"></span>
+          </div>
+        {:else if models.length === 0}
+          <div class="text-center py-8 text-base-content/50">
+            No models found. Create one to get started.
+          </div>
+        {:else if filteredModels.length === 0}
+          <div class="text-center py-8 text-base-content/50">
+            No models match your search.
+          </div>
+        {:else}
+          <div class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Model Number</th>
+                  <th>Notes</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each filteredModels as model}
+                  <tr class="hover cursor-pointer" onclick={() => viewDetail(model)}>
+                    <td class="font-medium">{model.name}</td>
+                    <td>{model.model_number || '-'}</td>
+                    <td class="max-w-xs truncate">{model.notes || '-'}</td>
+                    <td><StatusBadge status={model.status} /></td>
+                    <td>
+                      <button class="btn btn-ghost btn-sm" onclick={(e) => openEditModal(model, e)}>
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+          <div class="text-sm text-base-content/50 mt-2">
+            Showing {filteredModels.length} of {models.length} models
+          </div>
+        {/if}
+      </div>
+    </div>
+  {:else}
+    <AliasList />
+  {/if}
 </div>
 
 <Modal open={showModal} title={editingModel ? 'Edit Model' : 'Add Model'} onclose={closeModal}>

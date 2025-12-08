@@ -10,13 +10,16 @@
   let versions = $state([]);
   let usbTypes = $state([]);
   let models = $state([]);
+  let aliases = $state([]);
   let loading = $state(true);
 
   // Step navigation
   let currentStep = $state(1);
   let selectedUsbType = $state(null);
   let selectedModel = $state(null);
+  let selectedAlias = $state(null);
   let modelSearch = $state('');
+  let step2Mode = $state('models'); // 'models' or 'aliases'
 
   // Modal states
   let showModal = $state(false);
@@ -29,6 +32,7 @@
   let formData = $state({
     usb_type_id: null,
     model_id: null,
+    alias_id: null,
     version_code: '',
     is_current: false,
     is_legacy_valid: false,
@@ -96,11 +100,34 @@
     return counts;
   });
 
+  // Get version counts per alias for selected USB type
+  const versionCountsByAlias = $derived.by(() => {
+    if (!selectedUsbType) return {};
+    const counts = {};
+    for (const v of versions) {
+      if (v.usb_type_id !== selectedUsbType.id) continue;
+      if (v.alias_id) {
+        counts[v.alias_id] = (counts[v.alias_id] || 0) + 1;
+      }
+    }
+    return counts;
+  });
+
+  // Active aliases for dropdown
+  const activeAliases = $derived.by(() => {
+    return aliases.filter(a => a.status === 'active');
+  });
+
   // Get filtered versions for current selection
   const filteredVersions = $derived.by(() => {
     if (!selectedUsbType) return [];
     return versions.filter(v => {
       if (v.usb_type_id !== selectedUsbType.id) return false;
+      // If alias is selected, filter by alias
+      if (selectedAlias) {
+        return v.alias_id === selectedAlias.id;
+      }
+      // If model is selected, filter by model
       if (selectedUsbType.requires_model && selectedModel) {
         return v.model_id === selectedModel.id;
       }
@@ -111,10 +138,11 @@
   async function loadData() {
     loading = true;
     try {
-      [versions, usbTypes, models] = await Promise.all([
+      [versions, usbTypes, models, aliases] = await Promise.all([
         api.getVersions(null, null),
         api.getUsbTypes(null, false),
-        api.getModels(false)
+        api.getModels(false),
+        api.getAliasesWithCount(false)
       ]);
     } catch (e) {
       showError('Failed to load data');
@@ -126,8 +154,10 @@
   function selectUsbType(type) {
     selectedUsbType = type;
     selectedModel = null;
+    selectedAlias = null;
     modelSearch = '';
-    if (type.requires_model) {
+    step2Mode = type.supports_aliases ? 'aliases' : 'models';
+    if (type.requires_model || type.supports_aliases) {
       currentStep = 2;
     } else {
       currentStep = 3;
@@ -136,17 +166,26 @@
 
   function selectModel(model) {
     selectedModel = model;
+    selectedAlias = null;
+    currentStep = 3;
+  }
+
+  function selectAlias(alias) {
+    selectedAlias = alias;
+    selectedModel = null;
     currentStep = 3;
   }
 
   function goBack() {
-    if (currentStep === 3 && selectedUsbType?.requires_model) {
+    if (currentStep === 3 && (selectedUsbType?.requires_model || selectedUsbType?.supports_aliases)) {
       currentStep = 2;
       selectedModel = null;
+      selectedAlias = null;
     } else {
       currentStep = 1;
       selectedUsbType = null;
       selectedModel = null;
+      selectedAlias = null;
     }
   }
 
@@ -154,7 +193,9 @@
     currentStep = 1;
     selectedUsbType = null;
     selectedModel = null;
+    selectedAlias = null;
     modelSearch = '';
+    step2Mode = 'models';
   }
 
   function openCreateModal() {
@@ -162,6 +203,7 @@
     formData = {
       usb_type_id: selectedUsbType?.id || null,
       model_id: selectedModel?.id || null,
+      alias_id: selectedAlias?.id || null,
       version_code: '',
       is_current: false,
       is_legacy_valid: false,
@@ -178,6 +220,7 @@
     formData = {
       usb_type_id: version.usb_type_id,
       model_id: version.model_id,
+      alias_id: version.alias_id,
       version_code: version.version_code,
       is_current: version.is_current,
       is_legacy_valid: version.is_legacy_valid,
@@ -212,11 +255,12 @@
     }
 
     const usbTypeId = selectedUsbType?.id || formData.usb_type_id;
-    const modelId = selectedUsbType?.requires_model ? (selectedModel?.id || formData.model_id) : null;
+    const modelId = selectedAlias ? null : (selectedUsbType?.requires_model ? (selectedModel?.id || formData.model_id) : null);
+    const aliasId = selectedAlias?.id || formData.alias_id || null;
 
     // Check for duplicates only when creating
     if (!editingVersion) {
-      const similar = await api.checkSimilarVersion(formData.version_code, usbTypeId, modelId);
+      const similar = await api.checkSimilarVersion(formData.version_code, usbTypeId, modelId, aliasId);
       if (similar.length > 0) {
         similarItems = similar;
         showDuplicateConfirm = true;
@@ -233,7 +277,9 @@
       const data = {
         ...formData,
         usb_type_id: selectedUsbType?.id || formData.usb_type_id,
-        model_id: selectedUsbType?.requires_model ? (selectedModel?.id || formData.model_id) : null
+        // If alias is selected, model_id should be null
+        model_id: selectedAlias ? null : (selectedUsbType?.requires_model ? (selectedModel?.id || formData.model_id) : null),
+        alias_id: selectedAlias?.id || formData.alias_id || null
       };
 
       if (editingVersion) {
@@ -330,7 +376,8 @@
       try {
         const result = await api.createVersion({
           usb_type_id: selectedUsbType.id,
-          model_id: selectedUsbType?.requires_model ? selectedModel?.id : null,
+          model_id: selectedAlias ? null : (selectedUsbType?.requires_model ? selectedModel?.id : null),
+          alias_id: selectedAlias?.id || null,
           version_code: v.version_code,
           is_current: false,
           is_legacy_valid: false,
@@ -443,7 +490,7 @@
       </div>
     {/if}
 
-    <!-- Step 2: Select Model (if required) -->
+    <!-- Step 2: Select Model or Alias -->
     {#if currentStep === 2}
       <div class="card bg-base-100 shadow">
         <div class="card-body">
@@ -463,49 +510,102 @@
             </div>
           </div>
 
-          <h2 class="card-title text-lg">Select Model</h2>
-          <p class="text-base-content/60 text-sm mb-4">Choose a model to view its versions</p>
-
-          <!-- Search bar -->
-          <div class="form-control mb-4">
-            <div class="relative w-full max-w-md">
-              <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-base-content/50">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-              </span>
-              <input
-                type="text"
-                class="input input-bordered w-full pl-10"
-                placeholder="Search models..."
-                bind:value={modelSearch}
-              />
-            </div>
-          </div>
-
-          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {#each filteredModels as model}
+          <!-- Tabs for Aliases vs Models (only show if supports_aliases AND requires_model) -->
+          {#if selectedUsbType.supports_aliases && selectedUsbType.requires_model}
+            <div role="tablist" class="tabs tabs-boxed w-fit mb-4">
               <button
-                class="card bg-base-200 hover:bg-primary hover:text-primary-content transition-colors cursor-pointer"
-                onclick={() => selectModel(model)}
+                role="tab"
+                class="tab"
+                class:tab-active={step2Mode === 'aliases'}
+                onclick={() => { step2Mode = 'aliases'; modelSearch = ''; }}
               >
-                <div class="card-body p-4">
-                  <h4 class="font-semibold">{model.name}</h4>
-                  <div class="text-sm opacity-70">
-                    {#if model.model_number}
-                      <span class="block">{model.model_number}</span>
-                    {/if}
-                    <span>{versionCountsByModel[model.id] || 0} versions</span>
-                  </div>
-                </div>
+                Aliases
               </button>
-            {/each}
-          </div>
-
-          {#if filteredModels.length === 0}
-            <div class="text-center py-8 text-base-content/50">
-              {modelSearch ? 'No models match your search.' : 'No models found. Create models first.'}
+              <button
+                role="tab"
+                class="tab"
+                class:tab-active={step2Mode === 'models'}
+                onclick={() => { step2Mode = 'models'; modelSearch = ''; }}
+              >
+                Models
+              </button>
             </div>
+          {/if}
+
+          <!-- Aliases view -->
+          {#if step2Mode === 'aliases' && selectedUsbType.supports_aliases}
+            <h2 class="card-title text-lg">Select Alias</h2>
+            <p class="text-base-content/60 text-sm mb-4">Choose an alias to view versions shared by multiple models</p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {#each activeAliases as alias}
+                <button
+                  class="card bg-base-200 hover:bg-primary hover:text-primary-content transition-colors cursor-pointer"
+                  onclick={() => selectAlias(alias)}
+                >
+                  <div class="card-body p-4">
+                    <h4 class="font-semibold">{alias.name}</h4>
+                    <div class="text-sm opacity-70">
+                      <span class="block">{alias.model_count} model(s)</span>
+                      <span>{versionCountsByAlias[alias.id] || 0} versions</span>
+                    </div>
+                  </div>
+                </button>
+              {/each}
+            </div>
+
+            {#if activeAliases.length === 0}
+              <div class="text-center py-8 text-base-content/50">
+                No aliases found. Create aliases in Models &gt; Aliases first.
+              </div>
+            {/if}
+
+          <!-- Models view -->
+          {:else}
+            <h2 class="card-title text-lg">Select Model</h2>
+            <p class="text-base-content/60 text-sm mb-4">Choose a model to view its versions</p>
+
+            <!-- Search bar -->
+            <div class="form-control mb-4">
+              <div class="relative w-full max-w-md">
+                <span class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-base-content/50">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  class="input input-bordered w-full pl-10"
+                  placeholder="Search models..."
+                  bind:value={modelSearch}
+                />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {#each filteredModels as model}
+                <button
+                  class="card bg-base-200 hover:bg-primary hover:text-primary-content transition-colors cursor-pointer"
+                  onclick={() => selectModel(model)}
+                >
+                  <div class="card-body p-4">
+                    <h4 class="font-semibold">{model.name}</h4>
+                    <div class="text-sm opacity-70">
+                      {#if model.model_number}
+                        <span class="block">{model.model_number}</span>
+                      {/if}
+                      <span>{versionCountsByModel[model.id] || 0} versions</span>
+                    </div>
+                  </div>
+                </button>
+              {/each}
+            </div>
+
+            {#if filteredModels.length === 0}
+              <div class="text-center py-8 text-base-content/50">
+                {modelSearch ? 'No models match your search.' : 'No models found. Create models first.'}
+              </div>
+            {/if}
           {/if}
         </div>
       </div>
@@ -528,15 +628,17 @@
                 <ul>
                   <li><button class="link link-hover opacity-60" onclick={resetSelection}>USB Types</button></li>
                   <li>
-                    {#if selectedUsbType?.requires_model}
-                      <button class="link link-hover opacity-60" onclick={() => { currentStep = 2; selectedModel = null; }}>
+                    {#if selectedUsbType?.requires_model || selectedUsbType?.supports_aliases}
+                      <button class="link link-hover opacity-60" onclick={() => { currentStep = 2; selectedModel = null; selectedAlias = null; }}>
                         {selectedUsbType.platform_name} - {selectedUsbType.name}
                       </button>
                     {:else}
                       <span class="font-semibold">{selectedUsbType.platform_name} - {selectedUsbType.name}</span>
                     {/if}
                   </li>
-                  {#if selectedModel}
+                  {#if selectedAlias}
+                    <li><span class="font-semibold">{selectedAlias.name} (Alias)</span></li>
+                  {:else if selectedModel}
                     <li><span class="font-semibold">{selectedModel.name}</span></li>
                   {/if}
                 </ul>
@@ -568,7 +670,13 @@
               <div class="stat-value text-lg">{selectedUsbType.name}</div>
               <div class="stat-desc">{selectedUsbType.platform_name}</div>
             </div>
-            {#if selectedModel}
+            {#if selectedAlias}
+              <div class="stat py-3 px-4">
+                <div class="stat-title text-xs">Alias</div>
+                <div class="stat-value text-lg">{selectedAlias.name}</div>
+                <div class="stat-desc">{selectedAlias.model_count} model(s)</div>
+              </div>
+            {:else if selectedModel}
               <div class="stat py-3 px-4">
                 <div class="stat-title text-xs">Model</div>
                 <div class="stat-value text-lg">{selectedModel.name}</div>
@@ -697,7 +805,9 @@
         </svg>
         <div>
           <div class="font-semibold">{selectedUsbType.platform_name} - {selectedUsbType.name}</div>
-          {#if selectedModel}
+          {#if selectedAlias}
+            <div class="text-sm opacity-70">Alias: {selectedAlias.name} ({selectedAlias.model_count} models)</div>
+          {:else if selectedModel}
             <div class="text-sm opacity-70">{selectedModel.name}</div>
           {/if}
         </div>
@@ -815,7 +925,9 @@
       </svg>
       <div>
         <div class="font-semibold">{selectedUsbType?.platform_name} - {selectedUsbType?.name}</div>
-        {#if selectedModel}
+        {#if selectedAlias}
+          <div class="text-sm opacity-70">Alias: {selectedAlias.name} ({selectedAlias.model_count} models)</div>
+        {:else if selectedModel}
           <div class="text-sm opacity-70">{selectedModel.name}</div>
         {/if}
       </div>
