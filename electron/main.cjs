@@ -1589,7 +1589,7 @@ ipcMain.handle('dashboard:getStats', async () => {
 // =====================================================
 ipcMain.handle('sticker:printSingle', async (event, usbId) => {
   const usb = await database.queryOne(`
-    SELECT u.usb_id, u.custom_text,
+    SELECT u.usb_id, u.custom_text, u.hardware_serial,
            t.name as usb_type_name, t.requires_model,
            m.name as model_name,
            v.version_code,
@@ -1627,7 +1627,7 @@ ipcMain.handle('sticker:printSingle', async (event, usbId) => {
 ipcMain.handle('sticker:printBulk', async (event, usbIds) => {
   const placeholders = usbIds.map(() => '?').join(',');
   const usbs = await database.query(`
-    SELECT u.usb_id, u.custom_text,
+    SELECT u.usb_id, u.custom_text, u.hardware_serial,
            t.name as usb_type_name, t.requires_model,
            m.name as model_name,
            v.version_code,

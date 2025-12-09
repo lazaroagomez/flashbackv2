@@ -1,168 +1,156 @@
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
 const { generateQR } = require('./qrGenerator.cjs');
 
-// Sticker size: 1" x 2.6" = 72pt x 187.2pt
-const STICKER_WIDTH = 187.2;
-const STICKER_HEIGHT = 72;
-const PADDING = 4;
+// Sticker size: 1.49" x 0.39" = 107.28pt x 28.08pt
+const STICKER_WIDTH = 107.28;
+const STICKER_HEIGHT = 28.08;
+const PADDING = 1;
 
 /**
  * Draw a single sticker (page size = sticker size)
+ * Layout: [QR] [USB Type - Model / Version] [USB ID top-right]
+ * QR encodes hardware serial number
  */
 async function drawSticker(page, usb, font, fontBold, doc) {
   const width = STICKER_WIDTH;
   const height = STICKER_HEIGHT;
 
-  // QR Code (left side, vertically centered)
-  const qrSize = 52;
-  const qrDataUrl = await generateQR(usb.usb_id);
+  // QR Code (left side, nearly full height) - encodes hardware serial
+  const qrSize = height - (PADDING * 2);
+  const qrContent = usb.hardware_serial || usb.usb_id; // Fallback to USB ID if no serial
+  const qrDataUrl = await generateQR(qrContent);
   const qrImageBytes = Buffer.from(qrDataUrl.split(',')[1], 'base64');
   const qrImage = await doc.embedPng(qrImageBytes);
 
   page.drawImage(qrImage, {
     x: PADDING,
-    y: (height - qrSize) / 2,
+    y: PADDING,
     width: qrSize,
     height: qrSize
   });
 
   // Text area starts after QR
-  const textX = PADDING + qrSize + 6;
+  const textX = PADDING + qrSize + 2;
   const textWidth = width - textX - PADDING;
+  // Center text on full page width (visually centered including QR area)
+  const textCenterX = (textX + width) / 2;
 
-  // Top right: Custom text (if exists)
-  if (usb.custom_text) {
-    const customDisplay = usb.custom_text.length > 12 ? usb.custom_text.substring(0, 10) + '..' : usb.custom_text;
-    const customWidth = font.widthOfTextAtSize(customDisplay, 7);
-    page.drawText(customDisplay, {
-      x: width - PADDING - customWidth,
-      y: height - PADDING - 7,
-      size: 7,
-      font: font,
-      color: rgb(0, 0, 0)
-    });
-  }
+  // USB ID will be drawn at bottom left (after technician, same Y position)
 
-  // Center: USB Type - Model (large, bold, centered in text area)
+  // Main text: USB Type - Model (bold, CENTERED, prominent)
   const mainLine = usb.model_name
     ? `${usb.usb_type_name} - ${usb.model_name}`
     : usb.usb_type_name;
 
-  // Truncate if too long
+  // Find the largest font size that fits
   let displayMain = mainLine;
-  let fontSize = 12;
-  const maxWidth = textWidth - 5;
+  let mainFontSize = 10;
+  const maxMainWidth = textWidth - 2;
 
-  while (fontBold.widthOfTextAtSize(displayMain, fontSize) > maxWidth && fontSize > 8) {
-    fontSize--;
+  while (fontBold.widthOfTextAtSize(displayMain, mainFontSize) > maxMainWidth && mainFontSize > 5) {
+    mainFontSize--;
   }
-  if (fontBold.widthOfTextAtSize(displayMain, fontSize) > maxWidth) {
-    displayMain = displayMain.substring(0, 18) + '..';
+  if (fontBold.widthOfTextAtSize(displayMain, mainFontSize) > maxMainWidth) {
+    while (displayMain.length > 3 && fontBold.widthOfTextAtSize(displayMain + '..', mainFontSize) > maxMainWidth) {
+      displayMain = displayMain.slice(0, -1);
+    }
+    displayMain = displayMain + '..';
   }
 
-  // Center the main text in the text area
-  const mainTextWidth = fontBold.widthOfTextAtSize(displayMain, fontSize);
-  const textCenterX = textX + textWidth / 2;
-
+  // Center main text horizontally, position at top
+  const mainTextWidth = fontBold.widthOfTextAtSize(displayMain, mainFontSize);
+  const mainY = height - mainFontSize - 1;
   page.drawText(displayMain, {
-    x: textCenterX - mainTextWidth / 2,
-    y: height / 2 + 2,
-    size: fontSize,
+    x: textCenterX - (mainTextWidth / 2),
+    y: mainY,
+    size: mainFontSize,
     font: fontBold,
     color: rgb(0, 0, 0)
   });
 
-  // USB ID centered below QR code
-  const usbIdWidth = fontBold.widthOfTextAtSize(usb.usb_id, 10);
-  const qrCenterX = PADDING + qrSize / 2;
-  page.drawText(usb.usb_id, {
-    x: qrCenterX - usbIdWidth / 2,
-    y: PADDING,
-    size: 10,
-    font: fontBold,
-    color: rgb(0, 0, 0)
-  });
-
-  // Version centered below the main line (USB Type - Model)
+  // Version code - smaller, can wrap to 2 lines, centered
   const versionCode = usb.version_code || '';
-  const versionFontSize = 8;
-  const lineHeight = 9;
+  const versionFontSize = 4;
+  const lineHeight = versionFontSize + 1;
 
   // Check if version fits on one line
-  if (font.widthOfTextAtSize(versionCode, versionFontSize) <= maxWidth) {
-    // Single line - fits perfectly
+  if (font.widthOfTextAtSize(versionCode, versionFontSize) <= maxMainWidth) {
+    // Single line
     const versionWidth = font.widthOfTextAtSize(versionCode, versionFontSize);
     page.drawText(versionCode, {
-      x: textCenterX - versionWidth / 2,
-      y: height / 2 - 12,
+      x: textCenterX - (versionWidth / 2),
+      y: mainY - mainFontSize - 1,
       size: versionFontSize,
       font: font,
       color: rgb(0, 0, 0)
     });
   } else {
-    // Need to split into two lines
+    // Split into two lines
     let line1 = '';
     let line2 = versionCode;
 
-    // Find where to split for line 1
+    // Find split point for line 1
     for (let i = 1; i <= versionCode.length; i++) {
       const testLine = versionCode.substring(0, i);
-      if (font.widthOfTextAtSize(testLine, versionFontSize) > maxWidth) {
+      if (font.widthOfTextAtSize(testLine, versionFontSize) > maxMainWidth) {
         line1 = versionCode.substring(0, i - 1);
         line2 = versionCode.substring(i - 1);
         break;
       }
+      line1 = testLine;
     }
 
     // Truncate line 2 if still too long
-    if (font.widthOfTextAtSize(line2, versionFontSize) > maxWidth) {
-      while (line2.length > 3 && font.widthOfTextAtSize(line2 + '..', versionFontSize) > maxWidth) {
+    if (font.widthOfTextAtSize(line2, versionFontSize) > maxMainWidth) {
+      while (line2.length > 3 && font.widthOfTextAtSize(line2 + '..', versionFontSize) > maxMainWidth) {
         line2 = line2.slice(0, -1);
       }
       line2 = line2 + '..';
     }
 
-    // Draw line 1
+    // Draw line 1 centered
     const line1Width = font.widthOfTextAtSize(line1, versionFontSize);
     page.drawText(line1, {
-      x: textCenterX - line1Width / 2,
-      y: height / 2 - 10,
+      x: textCenterX - (line1Width / 2),
+      y: mainY - mainFontSize - 1,
       size: versionFontSize,
       font: font,
       color: rgb(0, 0, 0)
     });
 
-    // Draw line 2
+    // Draw line 2 centered
     const line2Width = font.widthOfTextAtSize(line2, versionFontSize);
     page.drawText(line2, {
-      x: textCenterX - line2Width / 2,
-      y: height / 2 - 10 - lineHeight,
+      x: textCenterX - (line2Width / 2),
+      y: mainY - mainFontSize - 1 - lineHeight,
       size: versionFontSize,
       font: font,
       color: rgb(0, 0, 0)
     });
   }
 
-  // Bottom right: Technician name
-  const techName = usb.technician_name || '';
-  const techDisplay = techName.length > 15 ? techName.substring(0, 13) + '..' : techName;
-  const techWidth = font.widthOfTextAtSize(techDisplay, 7);
-  page.drawText(techDisplay, {
-    x: width - PADDING - techWidth,
-    y: PADDING,
-    size: 7,
-    font: font,
+  // Bottom row: USB ID (left, next to QR) and Technician (right)
+  const bottomY = PADDING;
+  const bottomFontSize = 4;
+
+  // USB ID - bottom left, next to QR code
+  page.drawText(usb.usb_id, {
+    x: textX,
+    y: bottomY,
+    size: bottomFontSize,
+    font: fontBold,
     color: rgb(0, 0, 0)
   });
 
-  // Draw border for cutting guidance
-  page.drawRectangle({
-    x: 0.5,
-    y: 0.5,
-    width: width - 1,
-    height: height - 1,
-    borderColor: rgb(0.7, 0.7, 0.7),
-    borderWidth: 0.5
+  // Technician name - bottom right with small margin
+  const techName = usb.technician_name || '';
+  const techWidth = font.widthOfTextAtSize(techName, bottomFontSize);
+  page.drawText(techName, {
+    x: width - techWidth - 2,
+    y: bottomY,
+    size: bottomFontSize,
+    font: font,
+    color: rgb(0, 0, 0)
   });
 }
 
