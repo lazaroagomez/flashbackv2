@@ -88,12 +88,33 @@ async function execCommand(args, timeout = 30000) {
     const child = spawn(wusbkitPath, args);
     let stdout = '';
     let stderr = '';
-    let timedOut = false;
+    let settled = false;
 
+    // Helper to ensure we only resolve/reject once
+    const settle = (fn) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(killTimer);
+        fn();
+      }
+    };
+
+    // Primary timeout - try graceful kill
     const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
+      child.kill(); // On Windows, this sends SIGTERM equivalent
     }, timeout);
+
+    // Fallback timeout - force kill if still running after 5 more seconds
+    const killTimer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // Process may already be dead
+      }
+      // Force settle with timeout error if process won't die
+      settle(() => reject(new Error('Operation timed out')));
+    }, timeout + 5000);
 
     child.stdout.on('data', (data) => {
       stdout += data.toString();
@@ -104,29 +125,25 @@ async function execCommand(args, timeout = 30000) {
     });
 
     child.on('close', (code) => {
-      clearTimeout(timer);
-
-      if (timedOut) {
-        reject(new Error('Operation timed out'));
-        return;
-      }
-
-      if (code !== 0) {
-        reject(new Error(mapErrorMessage(stderr || `Command failed with exit code ${code}`, command)));
-        return;
-      }
-
-      try {
-        const result = stdout.trim() ? JSON.parse(stdout.trim()) : null;
-        resolve(result);
-      } catch (e) {
-        reject(new Error(`Failed to parse response: ${e.message}`));
-      }
+      settle(() => {
+        if (code !== 0 && code !== null) {
+          reject(new Error(mapErrorMessage(stderr || `Command failed with exit code ${code}`, command)));
+        } else if (code === null) {
+          // Process was killed (timeout)
+          reject(new Error('Operation timed out'));
+        } else {
+          try {
+            const result = stdout.trim() ? JSON.parse(stdout.trim()) : null;
+            resolve(result);
+          } catch (e) {
+            reject(new Error(`Failed to parse response: ${e.message}`));
+          }
+        }
+      });
     });
 
     child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(new Error(`Failed to execute WUSBKit: ${err.message}`));
+      settle(() => reject(new Error(`Failed to execute WUSBKit: ${err.message}`)));
     });
   });
 }
@@ -151,12 +168,34 @@ function execStreamCommand(args, onProgress, timeout = 600000) {
     const child = spawn(wusbkitPath, args);
     let lastProgress = null;
     let stderr = '';
-    let timedOut = false;
+    let settled = false;
 
+    // Helper to ensure we only resolve/reject once
+    const settle = (fn) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        clearTimeout(killTimer);
+        rl.close();
+        fn();
+      }
+    };
+
+    // Primary timeout - try graceful kill
     const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill('SIGTERM');
+      child.kill(); // On Windows, this sends SIGTERM equivalent
     }, timeout);
+
+    // Fallback timeout - force kill if still running after 5 more seconds
+    const killTimer = setTimeout(() => {
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // Process may already be dead
+      }
+      // Force settle with timeout error if process won't die
+      settle(() => reject(new Error('Operation timed out')));
+    }, timeout + 5000);
 
     // Parse NDJSON lines from stdout
     const rl = readline.createInterface({ input: child.stdout });
@@ -177,26 +216,20 @@ function execStreamCommand(args, onProgress, timeout = 600000) {
     });
 
     child.on('close', (code) => {
-      clearTimeout(timer);
-      rl.close();
-
-      if (timedOut) {
-        reject(new Error('Operation timed out'));
-        return;
-      }
-
-      if (code !== 0) {
-        reject(new Error(mapErrorMessage(stderr || `Command failed with exit code ${code}`, command)));
-        return;
-      }
-
-      resolve(lastProgress);
+      settle(() => {
+        if (code !== 0 && code !== null) {
+          reject(new Error(mapErrorMessage(stderr || `Command failed with exit code ${code}`, command)));
+        } else if (code === null) {
+          // Process was killed (timeout)
+          reject(new Error('Operation timed out'));
+        } else {
+          resolve(lastProgress);
+        }
+      });
     });
 
     child.on('error', (err) => {
-      clearTimeout(timer);
-      rl.close();
-      reject(new Error(`Failed to execute WUSBKit: ${err.message}`));
+      settle(() => reject(new Error(`Failed to execute WUSBKit: ${err.message}`)));
     });
 
     // Return child process for cancellation
@@ -238,7 +271,7 @@ function mapWusbkitDevice(device) {
  * @returns {Promise<Array>} Array of device objects
  */
 async function listDevices() {
-  const result = await execCommand(['list', '--json'], 180000); // 180 second timeout for many devices
+  const result = await execCommand(['list', '--json'], 30000); // 30 second timeout
 
   // Handle empty array or null
   if (!result) return [];
