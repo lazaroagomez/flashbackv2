@@ -7,11 +7,11 @@ const STICKER_HEIGHT = 28.08;
 const PADDING = 1;
 
 // Layout constants
-const BOTTOM_ROW_HEIGHT = 6; // 4pt font + 2pt breathing room
-const MIN_VERSION_FONT = 4;
-const MAX_VERSION_FONT = 4;
+const BOTTOM_ROW_HEIGHT = 5; // 4pt font + 1pt breathing room
+const MIN_VERSION_FONT = 6;
+const MAX_VERSION_FONT = 6;
 const MIN_MAIN_FONT = 5;
-const MAX_MAIN_FONT = 7;  // Smaller USB Type to balance with version
+const MAX_MAIN_FONT = 6;  // USB Type 6pt
 
 /**
  * Truncate text to fit within maxWidth, adding "..." if truncated
@@ -142,9 +142,9 @@ async function drawSticker(page, usb, font, fontBold, doc) {
   const versionTopY = mainY - 1; // 1pt gap below main text
   const maxTextWidth = textWidth - 2;
 
-  // Use 4pt font (same as technician name) for readability
-  const versionFontSize = 4;
-  const lineHeight = versionFontSize + 1; // Line spacing for 4pt
+  // Use 6pt font for version (same as USB Type, larger than technician name)
+  const versionFontSize = 6;
+  const lineHeight = versionFontSize + 1; // Line spacing for 6pt
 
   // Line 1 position: just below main text
   const line1Y = versionTopY - versionFontSize;
