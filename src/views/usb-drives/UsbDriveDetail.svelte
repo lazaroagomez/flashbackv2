@@ -405,10 +405,11 @@
     </div>
 
     <div class="form-control mt-4">
-      <label class="label">
+      <label class="label" for="edit-custom-text">
         <span class="label-text">Custom Text</span>
       </label>
       <input
+        id="edit-custom-text"
         type="text"
         class="input input-bordered"
         bind:value={editData.custom_text}
@@ -453,8 +454,8 @@
     </div>
 
     <div class="form-control mt-4">
-      <label class="label"><span class="label-text">Custom Text</span></label>
-      <input type="text" class="input input-bordered" bind:value={repurposeData.custom_text} maxlength="12" />
+      <label class="label" for="repurpose-custom-text"><span class="label-text">Custom Text</span></label>
+      <input id="repurpose-custom-text" type="text" class="input input-bordered" bind:value={repurposeData.custom_text} maxlength="12" />
     </div>
 
     <div class="modal-action">

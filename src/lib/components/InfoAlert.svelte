@@ -5,7 +5,8 @@
    */
   let {
     title = '',
-    type = 'info'
+    type = 'info',
+    children
   } = $props();
 </script>
 
@@ -17,6 +18,6 @@
     {#if title}
       <p class="font-semibold">{title}</p>
     {/if}
-    <p class="text-sm"><slot /></p>
+    <p class="text-sm">{@render children()}</p>
   </div>
 </div>

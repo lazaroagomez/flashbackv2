@@ -225,10 +225,11 @@
             <p class="text-xs text-base-content/50 mt-1 ml-1">Required for printing stickers</p>
 
             <div class="form-control mt-4">
-              <label class="label">
+              <label class="label" for="custom-text">
                 <span class="label-text">Custom Text (optional)</span>
               </label>
               <input
+                id="custom-text"
                 type="text"
                 class="input input-bordered"
                 bind:value={formData.custom_text}
@@ -287,8 +288,9 @@
             </div>
             <div class="grid grid-cols-2 gap-4">
               <div class="form-control">
-                <label class="label"><span class="label-text">Hardware Model</span></label>
+                <label class="label" for="hardware-model"><span class="label-text">Hardware Model</span></label>
                 <input
+                  id="hardware-model"
                   type="text"
                   class="input input-bordered"
                   bind:value={formData.hardware_model}
@@ -296,8 +298,9 @@
                 />
               </div>
               <div class="form-control">
-                <label class="label"><span class="label-text">Hardware Serial</span></label>
+                <label class="label" for="hardware-serial"><span class="label-text">Hardware Serial</span></label>
                 <input
+                  id="hardware-serial"
                   type="text"
                   class="input input-bordered font-mono"
                   bind:value={formData.hardware_serial}
@@ -305,8 +308,9 @@
                 />
               </div>
               <div class="form-control">
-                <label class="label"><span class="label-text">Capacity (GB)</span></label>
+                <label class="label" for="capacity-gb"><span class="label-text">Capacity (GB)</span></label>
                 <input
+                  id="capacity-gb"
                   type="number"
                   class="input input-bordered"
                   bind:value={formData.capacity_gb}

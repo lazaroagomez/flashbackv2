@@ -257,10 +257,11 @@
 <Modal open={showModal} title={editingAlias ? 'Edit Alias' : 'Add Alias'} onclose={closeModal}>
   <form onsubmit={handleSubmit}>
     <div class="form-control">
-      <label class="label">
+      <label class="label" for="alias-name">
         <span class="label-text">Name *</span>
       </label>
       <input
+        id="alias-name"
         type="text"
         class="input input-bordered"
         bind:value={formData.name}
@@ -270,10 +271,11 @@
     </div>
 
     <div class="form-control mt-4">
-      <label class="label">
+      <label class="label" for="alias-notes">
         <span class="label-text">Notes</span>
       </label>
       <textarea
+        id="alias-notes"
         class="textarea textarea-bordered"
         bind:value={formData.notes}
         placeholder="Enter notes (optional)"

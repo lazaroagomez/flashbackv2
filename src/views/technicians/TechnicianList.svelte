@@ -166,7 +166,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
         </svg>
       </div>
-      <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+      <ul tabindex="-1" role="menu" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
         <li><button onclick={openCreateModal}>Single Technician</button></li>
         <li><button onclick={openBulkModal}>Bulk Import</button></li>
       </ul>
@@ -220,10 +220,11 @@
 <Modal open={showModal} title={editingTechnician ? 'Edit Technician' : 'Add Technician'} onclose={closeModal}>
   <form onsubmit={handleSubmit}>
     <div class="form-control">
-      <label class="label">
+      <label class="label" for="tech-name">
         <span class="label-text">Name *</span>
       </label>
       <input
+        id="tech-name"
         type="text"
         class="input input-bordered"
         bind:value={formData.name}
@@ -233,10 +234,11 @@
     </div>
 
     <div class="form-control mt-4">
-      <label class="label">
+      <label class="label" for="tech-notes">
         <span class="label-text">Notes</span>
       </label>
       <textarea
+        id="tech-notes"
         class="textarea textarea-bordered"
         bind:value={formData.notes}
         placeholder="Enter notes (optional)"
@@ -283,10 +285,11 @@
     </div>
 
     <div class="form-control">
-      <label class="label">
+      <label class="label" for="bulk-techs">
         <span class="label-text">Technicians (one per line)</span>
       </label>
       <textarea
+        id="bulk-techs"
         class="textarea textarea-bordered font-mono text-sm"
         bind:value={bulkImport.bulkText}
         placeholder="John Smith,Senior technician

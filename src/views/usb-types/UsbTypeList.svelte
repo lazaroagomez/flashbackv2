@@ -233,10 +233,11 @@
     />
 
     <div class="form-control mt-4">
-      <label class="label">
+      <label class="label" for="usb-type-name">
         <span class="label-text">Name *</span>
       </label>
       <input
+        id="usb-type-name"
         type="text"
         class="input input-bordered"
         bind:value={formData.name}
@@ -250,9 +251,9 @@
         <input type="checkbox" class="checkbox" bind:checked={formData.requires_model} />
         <span class="label-text">Requires Model</span>
       </label>
-      <label class="label">
+      <span class="label">
         <span class="label-text-alt text-base-content/50">If checked, USB drives of this type must have a model assigned</span>
-      </label>
+      </span>
     </div>
 
     <div class="form-control mt-2">
@@ -260,9 +261,9 @@
         <input type="checkbox" class="checkbox" bind:checked={formData.supports_legacy} />
         <span class="label-text">Supports Legacy Versions</span>
       </label>
-      <label class="label">
+      <span class="label">
         <span class="label-text-alt text-base-content/50">If checked, versions can be marked as "legacy valid" to prevent pending update status</span>
-      </label>
+      </span>
     </div>
 
     <div class="form-control mt-2">
@@ -270,9 +271,9 @@
         <input type="checkbox" class="checkbox" bind:checked={formData.supports_aliases} />
         <span class="label-text">Supports Aliases</span>
       </label>
-      <label class="label">
+      <span class="label">
         <span class="label-text-alt text-base-content/50">If checked, models can be grouped into aliases to share versions</span>
-      </label>
+      </span>
     </div>
 
     {#if editingType}

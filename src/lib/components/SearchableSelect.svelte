@@ -125,7 +125,7 @@
 
 <div class="form-control w-full" bind:this={containerRef}>
   {#if label}
-    <label class="label">
+    <label class="label" for="searchable-select-{label.replace(/\s+/g, '-').toLowerCase()}">
       <span class="label-text">{label} {required ? '*' : ''}</span>
     </label>
   {/if}
@@ -134,6 +134,7 @@
     <div class="relative">
       <input
         bind:this={inputRef}
+        id="searchable-select-{label.replace(/\s+/g, '-').toLowerCase()}"
         type="text"
         class="input input-bordered w-full pr-16"
         class:input-disabled={disabled}
@@ -153,6 +154,7 @@
             class="btn btn-ghost btn-xs btn-circle"
             onclick={clearSelection}
             tabindex="-1"
+            aria-label="Clear selection"
           >
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -165,6 +167,7 @@
           onclick={() => { inputRef?.focus(); }}
           tabindex="-1"
           {disabled}
+          aria-label="Toggle dropdown"
         >
           <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 transition-transform" class:rotate-180={isOpen} fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />

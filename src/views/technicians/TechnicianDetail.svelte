@@ -121,18 +121,18 @@
 
     <!-- Stats -->
     <div class="stats shadow w-full">
-      <div class="stat cursor-pointer hover:bg-base-200" onclick={() => filterStatus = null}>
+      <button class="stat cursor-pointer hover:bg-base-200 text-left" onclick={() => filterStatus = null}>
         <div class="stat-title">Total USBs</div>
         <div class="stat-value">{stats.total}</div>
-      </div>
-      <div class="stat cursor-pointer hover:bg-base-200" onclick={() => filterStatus = 'assigned'}>
+      </button>
+      <button class="stat cursor-pointer hover:bg-base-200 text-left" onclick={() => filterStatus = 'assigned'}>
         <div class="stat-title">Assigned</div>
         <div class="stat-value text-success">{stats.assigned}</div>
-      </div>
-      <div class="stat cursor-pointer hover:bg-base-200" onclick={() => filterStatus = 'pending_update'}>
+      </button>
+      <button class="stat cursor-pointer hover:bg-base-200 text-left" onclick={() => filterStatus = 'pending_update'}>
         <div class="stat-title">Pending Update</div>
         <div class="stat-value text-warning">{stats.pending}</div>
-      </div>
+      </button>
       <div class="stat">
         <div class="stat-title">Other</div>
         <div class="stat-value">{stats.other}</div>

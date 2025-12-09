@@ -656,7 +656,7 @@
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
                 </svg>
               </div>
-              <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-48">
+              <ul tabindex="-1" role="menu" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-48">
                 <li><button onclick={openCreateModal}>Single Version</button></li>
                 <li><button onclick={openBulkModal}>Bulk Import</button></li>
               </ul>
@@ -815,10 +815,11 @@
     {/if}
 
     <div class="form-control">
-      <label class="label">
+      <label class="label" for="version-code">
         <span class="label-text">Version Code *</span>
       </label>
       <input
+        id="version-code"
         type="text"
         class="input input-bordered"
         bind:value={formData.version_code}
@@ -848,17 +849,18 @@
           <input type="checkbox" class="checkbox" bind:checked={formData.is_legacy_valid} />
           <span class="label-text">Legacy Valid</span>
         </label>
-        <label class="label">
+        <span class="label">
           <span class="label-text-alt text-base-content/50">Legacy versions won't trigger pending update status</span>
-        </label>
+        </span>
       </div>
     {/if}
 
     <div class="form-control mt-4">
-      <label class="label">
+      <label class="label" for="official-link">
         <span class="label-text">Official Link</span>
       </label>
       <input
+        id="official-link"
         type="text"
         class="input input-bordered"
         bind:value={formData.official_link}
@@ -868,10 +870,11 @@
     </div>
 
     <div class="form-control mt-4">
-      <label class="label">
+      <label class="label" for="internal-link">
         <span class="label-text">Internal Link</span>
       </label>
       <input
+        id="internal-link"
         type="text"
         class="input input-bordered"
         bind:value={formData.internal_link}
@@ -881,10 +884,11 @@
     </div>
 
     <div class="form-control mt-4">
-      <label class="label">
+      <label class="label" for="version-comments">
         <span class="label-text">Comments</span>
       </label>
       <textarea
+        id="version-comments"
         class="textarea textarea-bordered"
         bind:value={formData.comments}
         placeholder="Optional notes"
@@ -944,10 +948,11 @@
     </div>
 
     <div class="form-control">
-      <label class="label">
+      <label class="label" for="bulk-versions">
         <span class="label-text">Versions (one per line)</span>
       </label>
       <textarea
+        id="bulk-versions"
         class="textarea textarea-bordered font-mono text-sm"
         bind:value={bulkText}
         placeholder="v123

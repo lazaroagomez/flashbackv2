@@ -155,10 +155,11 @@
 <Modal open={showModal} title={editingPlatform ? 'Edit Platform' : 'Add Platform'} onclose={closeModal}>
   <form onsubmit={handleSubmit}>
     <div class="form-control">
-      <label class="label">
+      <label class="label" for="platform-name">
         <span class="label-text">Name *</span>
       </label>
       <input
+        id="platform-name"
         type="text"
         class="input input-bordered"
         bind:value={formData.name}

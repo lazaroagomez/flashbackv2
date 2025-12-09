@@ -50,26 +50,28 @@
 
       <form onsubmit={handleSubmit}>
         <div class="form-control">
-          <label class="label">
+          <label class="label" for="username">
             <span class="label-text">Your Name</span>
           </label>
           <input
+            id="username"
             type="text"
             placeholder="Enter your name"
             class="input input-bordered"
             bind:value={username}
             disabled={loading}
           />
-          <label class="label">
+          <span class="label">
             <span class="label-text-alt text-base-content/50">This will be used for audit logs</span>
-          </label>
+          </span>
         </div>
 
         <div class="form-control mt-2">
-          <label class="label">
+          <label class="label" for="password">
             <span class="label-text">Password</span>
           </label>
           <input
+            id="password"
             type="password"
             placeholder="Enter password"
             class="input input-bordered"

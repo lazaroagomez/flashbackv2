@@ -204,7 +204,7 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
           </svg>
         </div>
-        <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+        <ul tabindex="-1" role="menu" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
           <li><button onclick={openCreateModal}>Single Model</button></li>
           <li><button onclick={openBulkModal}>Bulk Import</button></li>
         </ul>
@@ -307,10 +307,11 @@
 <Modal open={showModal} title={editingModel ? 'Edit Model' : 'Add Model'} onclose={closeModal}>
   <form onsubmit={handleSubmit}>
     <div class="form-control">
-      <label class="label">
+      <label class="label" for="model-name">
         <span class="label-text">Name *</span>
       </label>
       <input
+        id="model-name"
         type="text"
         class="input input-bordered"
         bind:value={formData.name}
@@ -320,10 +321,11 @@
     </div>
 
     <div class="form-control mt-4">
-      <label class="label">
+      <label class="label" for="model-number">
         <span class="label-text">Model Number</span>
       </label>
       <input
+        id="model-number"
         type="text"
         class="input input-bordered"
         bind:value={formData.model_number}
@@ -333,10 +335,11 @@
     </div>
 
     <div class="form-control mt-4">
-      <label class="label">
+      <label class="label" for="model-notes">
         <span class="label-text">Notes</span>
       </label>
       <textarea
+        id="model-notes"
         class="textarea textarea-bordered"
         bind:value={formData.notes}
         placeholder="Enter notes (optional)"
@@ -382,10 +385,11 @@
     </div>
 
     <div class="form-control">
-      <label class="label">
+      <label class="label" for="bulk-models">
         <span class="label-text">Models (one per line)</span>
       </label>
       <textarea
+        id="bulk-models"
         class="textarea textarea-bordered font-mono text-sm"
         bind:value={bulkImport.bulkText}
         placeholder="iPhone 15,A3090,Latest model

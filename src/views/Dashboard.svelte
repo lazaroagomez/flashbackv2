@@ -65,7 +65,7 @@
         <div class="stat-value text-primary">{totalUsb}</div>
       </div>
 
-      <div class="stat cursor-pointer hover:bg-base-200" onclick={() => navigate('usb-drives')}>
+      <button class="stat cursor-pointer hover:bg-base-200 text-left" onclick={() => navigate('usb-drives')}>
         <div class="stat-figure text-success">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -73,9 +73,9 @@
         </div>
         <div class="stat-title">Assigned</div>
         <div class="stat-value text-success">{stats.byStatus?.assigned || 0}</div>
-      </div>
+      </button>
 
-      <div class="stat cursor-pointer hover:bg-base-200" onclick={() => navigate('pending-updates')}>
+      <button class="stat cursor-pointer hover:bg-base-200 text-left" onclick={() => navigate('pending-updates')}>
         <div class="stat-figure text-warning">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -86,7 +86,7 @@
         {#if pendingCount > 0}
           <div class="stat-desc text-warning">Click to view</div>
         {/if}
-      </div>
+      </button>
 
       <div class="stat">
         <div class="stat-figure text-error">
