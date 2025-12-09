@@ -12,10 +12,10 @@
     "package:win": "vite build && electron-builder --win"
   },
   "dependencies": {
+    "bwip-js": "^4.8.0",
     "dotenv": "^17.2.3",
     "mysql2": "^3.11.0",
-    "pdf-lib": "^1.17.1",
-    "qrcode": "^1.5.4"
+    "pdf-lib": "^1.17.1"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^3.1.0",

@@ -3,7 +3,10 @@
     "allow": [
       "Bash(npm install:*)",
       "Bash(dir:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git log:*)",
+      "Bash(npm uninstall:*)",
+      "Bash(del \"d:\\server_git\\flashbackv2\\electron\\services\\qrGenerator.cjs\")"
     ],
     "deny": [],
     "ask": []

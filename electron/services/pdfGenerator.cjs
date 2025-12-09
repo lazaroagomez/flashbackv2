@@ -1,65 +1,131 @@
 const { PDFDocument, rgb, StandardFonts } = require('pdf-lib');
-const { generateQR } = require('./qrGenerator.cjs');
+const { generateDataMatrix } = require('./barcodeGenerator.cjs');
 
-// Sticker size: 1.49" x 0.39" = 107.28pt x 28.08pt
+// Sticker size: 1.49" x 0.39" = 107.28pt x 28.08pt - FIXED, DO NOT CHANGE
 const STICKER_WIDTH = 107.28;
 const STICKER_HEIGHT = 28.08;
 const PADDING = 1;
 
+// Layout constants
+const BOTTOM_ROW_HEIGHT = 6; // 4pt font + 2pt breathing room
+const MIN_VERSION_FONT = 3;
+const MAX_VERSION_FONT = 4;
+const MIN_MAIN_FONT = 5;
+const MAX_MAIN_FONT = 10;
+
 /**
- * Draw a single sticker (page size = sticker size)
- * Layout: [QR] [USB Type - Model / Version] [USB ID top-right]
- * QR encodes hardware serial number
+ * Truncate text to fit within maxWidth, adding "..." if truncated
+ * @param {string} text - Text to truncate
+ * @param {Object} font - PDF font object
+ * @param {number} fontSize - Font size
+ * @param {number} maxWidth - Maximum width in points
+ * @returns {string} - Truncated text
+ */
+function truncateText(text, font, fontSize, maxWidth) {
+  if (font.widthOfTextAtSize(text, fontSize) <= maxWidth) {
+    return text;
+  }
+
+  let truncated = text;
+  while (truncated.length > 3 && font.widthOfTextAtSize(truncated + '..', fontSize) > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+  return truncated + '..';
+}
+
+/**
+ * Find the largest font size that allows text to fit within maxWidth
+ * @param {string} text - Text to measure
+ * @param {Object} font - PDF font object
+ * @param {number} maxFontSize - Maximum font size to try
+ * @param {number} minFontSize - Minimum font size to try
+ * @param {number} maxWidth - Maximum width in points
+ * @returns {number} - Best font size
+ */
+function findBestFontSize(text, font, maxFontSize, minFontSize, maxWidth) {
+  for (let size = maxFontSize; size >= minFontSize; size--) {
+    if (font.widthOfTextAtSize(text, size) <= maxWidth) {
+      return size;
+    }
+  }
+  return minFontSize;
+}
+
+/**
+ * Draw a single sticker with fixed-zone layout
+ * Layout zones (NEVER overlap):
+ * - Zone 1 (Left): Data Matrix barcode
+ * - Zone 2 (Top): USB Type - Model (bold)
+ * - Zone 3 (Middle): Version code (shrinks/truncates)
+ * - Zone 4 (Bottom): USB ID + Technician name (FIXED position)
+ *
+ * Data Matrix encodes hardware_serial (UUID) or falls back to usb_id
  */
 async function drawSticker(page, usb, font, fontBold, doc) {
   const width = STICKER_WIDTH;
   const height = STICKER_HEIGHT;
 
-  // QR Code (left side, nearly full height) - encodes hardware serial
-  const qrSize = height - (PADDING * 2);
-  const qrContent = usb.hardware_serial || usb.usb_id; // Fallback to USB ID if no serial
-  const qrDataUrl = await generateQR(qrContent);
-  const qrImageBytes = Buffer.from(qrDataUrl.split(',')[1], 'base64');
-  const qrImage = await doc.embedPng(qrImageBytes);
+  // === ZONE 1: Data Matrix (left side, nearly full height) ===
+  const barcodeSize = height - (PADDING * 2);
+  const barcodeContent = usb.hardware_serial || usb.usb_id; // Encode UUID, fallback to USB ID
+  const barcodeDataUrl = await generateDataMatrix(barcodeContent);
+  const barcodeImageBytes = Buffer.from(barcodeDataUrl.split(',')[1], 'base64');
+  const barcodeImage = await doc.embedPng(barcodeImageBytes);
 
-  page.drawImage(qrImage, {
+  page.drawImage(barcodeImage, {
     x: PADDING,
     y: PADDING,
-    width: qrSize,
-    height: qrSize
+    width: barcodeSize,
+    height: barcodeSize
   });
 
-  // Text area starts after QR
-  const textX = PADDING + qrSize + 2;
+  // === Calculate text area bounds ===
+  const textX = PADDING + barcodeSize + 2;
   const textWidth = width - textX - PADDING;
-  // Center text on full page width (visually centered including QR area)
   const textCenterX = (textX + width) / 2;
 
-  // USB ID will be drawn at bottom left (after technician, same Y position)
+  // Bottom row is FIXED - reserve space for it
+  const bottomRowY = PADDING;
+  const safeBottomY = bottomRowY + BOTTOM_ROW_HEIGHT; // Text must stay above this line
 
-  // Main text: USB Type - Model (bold, CENTERED, prominent)
+  // === ZONE 4: Bottom row (FIXED, draw first to ensure it's always there) ===
+  const bottomFontSize = 4;
+
+  // USB ID - bottom left, next to barcode
+  page.drawText(usb.usb_id, {
+    x: textX,
+    y: bottomRowY,
+    size: bottomFontSize,
+    font: fontBold,
+    color: rgb(0, 0, 0)
+  });
+
+  // Technician name - bottom right
+  const techName = usb.technician_name || '';
+  const techWidth = font.widthOfTextAtSize(techName, bottomFontSize);
+  page.drawText(techName, {
+    x: width - techWidth - 2,
+    y: bottomRowY,
+    size: bottomFontSize,
+    font: font,
+    color: rgb(0, 0, 0)
+  });
+
+  // === ZONE 2: Main text (USB Type - Model) at top ===
   const mainLine = usb.model_name
     ? `${usb.usb_type_name} - ${usb.model_name}`
     : usb.usb_type_name;
 
-  // Find the largest font size that fits
-  let displayMain = mainLine;
-  let mainFontSize = 10;
-  const maxMainWidth = textWidth - 2;
+  // Find best font size for main line
+  let mainFontSize = findBestFontSize(mainLine, fontBold, MAX_MAIN_FONT, MIN_MAIN_FONT, textWidth - 2);
 
-  while (fontBold.widthOfTextAtSize(displayMain, mainFontSize) > maxMainWidth && mainFontSize > 5) {
-    mainFontSize--;
-  }
-  if (fontBold.widthOfTextAtSize(displayMain, mainFontSize) > maxMainWidth) {
-    while (displayMain.length > 3 && fontBold.widthOfTextAtSize(displayMain + '..', mainFontSize) > maxMainWidth) {
-      displayMain = displayMain.slice(0, -1);
-    }
-    displayMain = displayMain + '..';
-  }
+  // Truncate if still doesn't fit at minimum font size
+  const displayMain = truncateText(mainLine, fontBold, mainFontSize, textWidth - 2);
 
-  // Center main text horizontally, position at top
-  const mainTextWidth = fontBold.widthOfTextAtSize(displayMain, mainFontSize);
+  // Position main text at top of sticker
   const mainY = height - mainFontSize - 1;
+  const mainTextWidth = fontBold.widthOfTextAtSize(displayMain, mainFontSize);
+
   page.drawText(displayMain, {
     x: textCenterX - (mainTextWidth / 2),
     y: mainY,
@@ -68,31 +134,48 @@ async function drawSticker(page, usb, font, fontBold, doc) {
     color: rgb(0, 0, 0)
   });
 
-  // Version code - smaller, can wrap to 2 lines, centered
+  // === ZONE 3: Version code (between main line and bottom row) - TWO LINES MAX ===
   const versionCode = usb.version_code || '';
-  const versionFontSize = 4;
-  const lineHeight = versionFontSize + 1;
+  if (!versionCode) return; // No version to display
+
+  // Calculate available space for version (between main text and bottom row)
+  const versionTopY = mainY - 1; // 1pt gap below main text
+  const maxTextWidth = textWidth - 2;
+
+  // Use smaller font (3pt) to fit more text in two lines
+  const versionFontSize = 3;
+  const lineHeight = versionFontSize + 0.5; // Tight line spacing
+
+  // Line 1 position: just below main text
+  const line1Y = versionTopY - versionFontSize;
+  // Line 2 position: below line 1, but MUST stay above safeBottomY
+  const line2Y = line1Y - lineHeight;
+
+  // Check if we have space for at least one line
+  if (line1Y < safeBottomY) {
+    return; // No space for version at all
+  }
 
   // Check if version fits on one line
-  if (font.widthOfTextAtSize(versionCode, versionFontSize) <= maxMainWidth) {
+  if (font.widthOfTextAtSize(versionCode, versionFontSize) <= maxTextWidth) {
     // Single line
     const versionWidth = font.widthOfTextAtSize(versionCode, versionFontSize);
     page.drawText(versionCode, {
       x: textCenterX - (versionWidth / 2),
-      y: mainY - mainFontSize - 1,
+      y: line1Y,
       size: versionFontSize,
       font: font,
       color: rgb(0, 0, 0)
     });
-  } else {
-    // Split into two lines
+  } else if (line2Y >= safeBottomY) {
+    // We have space for two lines - split the text
     let line1 = '';
     let line2 = versionCode;
 
-    // Find split point for line 1
+    // Find the split point - fill line 1 as much as possible
     for (let i = 1; i <= versionCode.length; i++) {
       const testLine = versionCode.substring(0, i);
-      if (font.widthOfTextAtSize(testLine, versionFontSize) > maxMainWidth) {
+      if (font.widthOfTextAtSize(testLine, versionFontSize) > maxTextWidth) {
         line1 = versionCode.substring(0, i - 1);
         line2 = versionCode.substring(i - 1);
         break;
@@ -100,58 +183,40 @@ async function drawSticker(page, usb, font, fontBold, doc) {
       line1 = testLine;
     }
 
-    // Truncate line 2 if still too long
-    if (font.widthOfTextAtSize(line2, versionFontSize) > maxMainWidth) {
-      while (line2.length > 3 && font.widthOfTextAtSize(line2 + '..', versionFontSize) > maxMainWidth) {
-        line2 = line2.slice(0, -1);
-      }
-      line2 = line2 + '..';
-    }
+    // Truncate line 2 if it's still too long
+    line2 = truncateText(line2, font, versionFontSize, maxTextWidth);
 
-    // Draw line 1 centered
+    // Draw line 1
     const line1Width = font.widthOfTextAtSize(line1, versionFontSize);
     page.drawText(line1, {
       x: textCenterX - (line1Width / 2),
-      y: mainY - mainFontSize - 1,
+      y: line1Y,
       size: versionFontSize,
       font: font,
       color: rgb(0, 0, 0)
     });
 
-    // Draw line 2 centered
+    // Draw line 2
     const line2Width = font.widthOfTextAtSize(line2, versionFontSize);
     page.drawText(line2, {
       x: textCenterX - (line2Width / 2),
-      y: mainY - mainFontSize - 1 - lineHeight,
+      y: line2Y,
+      size: versionFontSize,
+      font: font,
+      color: rgb(0, 0, 0)
+    });
+  } else {
+    // Only space for one line - truncate
+    const truncatedVersion = truncateText(versionCode, font, versionFontSize, maxTextWidth);
+    const versionWidth = font.widthOfTextAtSize(truncatedVersion, versionFontSize);
+    page.drawText(truncatedVersion, {
+      x: textCenterX - (versionWidth / 2),
+      y: line1Y,
       size: versionFontSize,
       font: font,
       color: rgb(0, 0, 0)
     });
   }
-
-  // Bottom row: USB ID (left, next to QR) and Technician (right)
-  const bottomY = PADDING;
-  const bottomFontSize = 4;
-
-  // USB ID - bottom left, next to QR code
-  page.drawText(usb.usb_id, {
-    x: textX,
-    y: bottomY,
-    size: bottomFontSize,
-    font: fontBold,
-    color: rgb(0, 0, 0)
-  });
-
-  // Technician name - bottom right with small margin
-  const techName = usb.technician_name || '';
-  const techWidth = font.widthOfTextAtSize(techName, bottomFontSize);
-  page.drawText(techName, {
-    x: width - techWidth - 2,
-    y: bottomY,
-    size: bottomFontSize,
-    font: font,
-    color: rgb(0, 0, 0)
-  });
 }
 
 /**
@@ -168,7 +233,7 @@ async function generateStickerPDF(usbData) {
     // Skip if no technician
     if (!usb.technician_name) continue;
 
-    // Create page with sticker dimensions
+    // Create page with sticker dimensions (FIXED size)
     const page = doc.addPage([STICKER_WIDTH, STICKER_HEIGHT]);
     await drawSticker(page, usb, font, fontBold, doc);
   }
