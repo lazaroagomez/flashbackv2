@@ -24,8 +24,10 @@ function getWusbkitPath() {
 
 /**
  * Map WUSBKit error codes to user-friendly messages
+ * @param {string} error - Error string from WUSBKit
+ * @param {string} command - The command that was executed (for context-aware messages)
  */
-function mapErrorMessage(error) {
+function mapErrorMessage(error, command = '') {
   const errorMap = {
     'USB_NOT_FOUND': 'USB drive not found. Ensure it is connected.',
     'PWSH_NOT_FOUND': 'PowerShell 7 is required. Please install it from https://github.com/PowerShell/PowerShell/releases',
@@ -39,12 +41,25 @@ function mapErrorMessage(error) {
   // Try to parse as JSON error from WUSBKit
   try {
     const parsed = JSON.parse(error);
+    if (parsed.code === 'PWSH_NOT_FOUND') {
+      // For list/info commands, WMI failed and fell back to PowerShell
+      if (command === 'list' || command === 'info') {
+        return 'USB detection failed: Native WMI query failed and PowerShell 7 (fallback) is not installed. Please install PowerShell 7 from https://github.com/PowerShell/PowerShell/releases';
+      }
+      return errorMap['PWSH_NOT_FOUND'];
+    }
     if (parsed.code && errorMap[parsed.code]) {
       return `${errorMap[parsed.code]}: ${parsed.error || ''}`;
     }
     return parsed.error || error;
   } catch {
     // Check if error string contains a known code
+    if (error.includes('PWSH_NOT_FOUND')) {
+      if (command === 'list' || command === 'info') {
+        return 'USB detection failed: Native WMI query failed and PowerShell 7 (fallback) is not installed. Please install PowerShell 7 from https://github.com/PowerShell/PowerShell/releases';
+      }
+      return errorMap['PWSH_NOT_FOUND'];
+    }
     for (const [code, message] of Object.entries(errorMap)) {
       if (error.includes(code)) {
         return message;
@@ -63,6 +78,7 @@ function mapErrorMessage(error) {
 async function execCommand(args, timeout = 30000) {
   return new Promise((resolve, reject) => {
     const wusbkitPath = getWusbkitPath();
+    const command = args[0] || ''; // First arg is the command (list, info, format, etc.)
 
     if (!fs.existsSync(wusbkitPath)) {
       reject(new Error(`WUSBKit binary not found at: ${wusbkitPath}`));
@@ -96,7 +112,7 @@ async function execCommand(args, timeout = 30000) {
       }
 
       if (code !== 0) {
-        reject(new Error(mapErrorMessage(stderr || `Command failed with exit code ${code}`)));
+        reject(new Error(mapErrorMessage(stderr || `Command failed with exit code ${code}`, command)));
         return;
       }
 
@@ -125,6 +141,7 @@ async function execCommand(args, timeout = 30000) {
 function execStreamCommand(args, onProgress, timeout = 600000) {
   return new Promise((resolve, reject) => {
     const wusbkitPath = getWusbkitPath();
+    const command = args[0] || ''; // First arg is the command
 
     if (!fs.existsSync(wusbkitPath)) {
       reject(new Error(`WUSBKit binary not found at: ${wusbkitPath}`));
@@ -169,7 +186,7 @@ function execStreamCommand(args, onProgress, timeout = 600000) {
       }
 
       if (code !== 0) {
-        reject(new Error(mapErrorMessage(stderr || `Command failed with exit code ${code}`)));
+        reject(new Error(mapErrorMessage(stderr || `Command failed with exit code ${code}`, command)));
         return;
       }
 
@@ -353,7 +370,7 @@ async function flashDevice(options) {
       activeFlashProcesses.delete(jobId);
 
       if (code !== 0) {
-        reject(new Error(mapErrorMessage(stderr || `Flash failed with exit code ${code}`)));
+        reject(new Error(mapErrorMessage(stderr || `Flash failed with exit code ${code}`, 'flash')));
         return;
       }
 

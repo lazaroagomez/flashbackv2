@@ -5,8 +5,7 @@
   import {
     connectedDrivesState,
     loadConnectedDrives,
-    refreshConnectedDrives,
-    removeDriveFromCache
+    refreshConnectedDrives
   } from '../../lib/stores/connectedDrives.svelte.js';
   import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
   import BulkEditModal from '../../lib/components/BulkEditModal.svelte';
@@ -34,9 +33,6 @@
   // Format progress state (from WUSBKit NDJSON)
   let formatProgress = $state(null);
   let unsubscribeProgress = null;
-
-  // Eject state
-  let ejectingDisk = $state(null);
 
   const isFormatting = $derived(formatQueue.some(q => q.status === 'formatting'));
   const registeredDrives = $derived(drives.filter(d => d.isRegistered));
@@ -203,24 +199,6 @@
 
   function getQueueStatus(diskIndex) {
     return formatQueue.find(q => q.diskIndex === diskIndex);
-  }
-
-  // Eject a USB drive
-  async function handleEject(drive, event) {
-    event.stopPropagation();
-    if (ejectingDisk) return;
-
-    ejectingDisk = drive.diskIndex;
-    try {
-      await api.ejectUsbDevice(drive.driveLetter || drive.diskIndex);
-      showSuccess(`Drive "${drive.model}" ejected safely`);
-      // Remove from cached list
-      removeDriveFromCache(drive.diskIndex);
-    } catch (e) {
-      showError(e.message || 'Eject failed');
-    } finally {
-      ejectingDisk = null;
-    }
   }
 
   $effect(() => {
@@ -415,29 +393,13 @@
                           <span class="text-base-content/50">Waiting</span>
                         {/if}
                       {:else}
-                        <div class="flex gap-1">
-                          <button
-                            class="btn btn-ghost btn-sm text-error"
-                            onclick={(e) => openFormatDialog(drive, e)}
-                            disabled={isFormatting || ejectingDisk !== null}
-                          >
-                            Format
-                          </button>
-                          <button
-                            class="btn btn-ghost btn-sm"
-                            onclick={(e) => handleEject(drive, e)}
-                            disabled={isFormatting || ejectingDisk !== null}
-                            title="Safely eject drive"
-                          >
-                            {#if ejectingDisk === drive.diskIndex}
-                              <span class="loading loading-spinner loading-xs"></span>
-                            {:else}
-                              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                              </svg>
-                            {/if}
-                          </button>
-                        </div>
+                        <button
+                          class="btn btn-ghost btn-sm text-error"
+                          onclick={(e) => openFormatDialog(drive, e)}
+                          disabled={isFormatting}
+                        >
+                          Format
+                        </button>
                       {/if}
                     </td>
                   </tr>
@@ -512,29 +474,15 @@
                         {/if}
                       {:else}
                         <div class="flex gap-1">
-                          <button class="btn btn-primary btn-sm" onclick={() => handleRegister(drive)} disabled={isFormatting || ejectingDisk !== null}>
+                          <button class="btn btn-primary btn-sm" onclick={() => handleRegister(drive)} disabled={isFormatting}>
                             Register
                           </button>
                           <button
                             class="btn btn-ghost btn-sm text-error"
                             onclick={(e) => openFormatDialog(drive, e)}
-                            disabled={isFormatting || ejectingDisk !== null}
+                            disabled={isFormatting}
                           >
                             Format
-                          </button>
-                          <button
-                            class="btn btn-ghost btn-sm"
-                            onclick={(e) => handleEject(drive, e)}
-                            disabled={isFormatting || ejectingDisk !== null}
-                            title="Safely eject drive"
-                          >
-                            {#if ejectingDisk === drive.diskIndex}
-                              <span class="loading loading-spinner loading-xs"></span>
-                            {:else}
-                              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                              </svg>
-                            {/if}
                           </button>
                         </div>
                       {/if}
@@ -596,29 +544,13 @@
                           <span class="text-base-content/50">Waiting</span>
                         {/if}
                       {:else}
-                        <div class="flex gap-1">
-                          <button
-                            class="btn btn-ghost btn-sm text-error"
-                            onclick={(e) => openFormatDialog(drive, e)}
-                            disabled={isFormatting || ejectingDisk !== null}
-                          >
-                            Format
-                          </button>
-                          <button
-                            class="btn btn-ghost btn-sm"
-                            onclick={(e) => handleEject(drive, e)}
-                            disabled={isFormatting || ejectingDisk !== null}
-                            title="Safely eject drive"
-                          >
-                            {#if ejectingDisk === drive.diskIndex}
-                              <span class="loading loading-spinner loading-xs"></span>
-                            {:else}
-                              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                              </svg>
-                            {/if}
-                          </button>
-                        </div>
+                        <button
+                          class="btn btn-ghost btn-sm text-error"
+                          onclick={(e) => openFormatDialog(drive, e)}
+                          disabled={isFormatting}
+                        >
+                          Format
+                        </button>
                       {/if}
                     </td>
                   </tr>
