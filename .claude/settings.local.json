@@ -6,7 +6,11 @@
       "Bash(find:*)",
       "Bash(git log:*)",
       "Bash(npm uninstall:*)",
-      "Bash(del \"d:\\server_git\\flashbackv2\\electron\\services\\qrGenerator.cjs\")"
+      "Bash(del \"d:\\server_git\\flashbackv2\\electron\\services\\qrGenerator.cjs\")",
+      "Bash(gh secret:*)",
+      "Bash(gh repo view:*)",
+      "Bash(where:*)",
+      "Bash(gh api:*)"
     ],
     "deny": [],
     "ask": []
