@@ -39,8 +39,7 @@
     "publish": {
       "provider": "github",
       "owner": "lazaroagomez",
-      "repo": "flashbackv2",
-      "private": true
+      "repo": "flashbackv2"
     },
     "extraResources": [
       {
@@ -58,7 +57,8 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "FlashBack-USB-Setup.${ext}"
     }
   }
 }

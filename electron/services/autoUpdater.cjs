@@ -1,21 +1,9 @@
 const { autoUpdater } = require('electron-updater');
 const { dialog, app } = require('electron');
 
-// GitHub token for private repo access - replaced at build time by GitHub Actions
-const GH_TOKEN = '__GH_TOKEN__';
-
 // Configure auto-updater
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
-
-// Set GitHub token for private repo
-if (GH_TOKEN && GH_TOKEN !== '__GH_TOKEN__') {
-  autoUpdater.setRequestHeaders({
-    'Authorization': `token ${GH_TOKEN}`
-  });
-  // Also set the token in the provider
-  process.env.GH_TOKEN = GH_TOKEN;
-}
 
 function init() {
   // Set up event handlers
@@ -30,7 +18,7 @@ function init() {
       type: 'info',
       title: 'Update Available',
       message: `A new version (${info.version}) is available.`,
-      detail: 'Would you like to download and install it now?',
+      detail: 'Would you like to download it now?',
       buttons: ['Download Now', 'Later'],
       defaultId: 0,
       cancelId: 1
