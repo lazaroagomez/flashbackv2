@@ -70,42 +70,43 @@ powershell -Command "(Get-Content 'electron\services\autoUpdater.cjs') -replace 
 
 echo.
 echo ========================================
-echo   Build complete!
+echo   Build complete
 echo   Output: dist-electron\FlashBack USB Setup %VERSION%.exe
 echo ========================================
 echo.
 
 :: Ask if user wants to upload to GitHub
 set /p UPLOAD="Upload to GitHub releases? (y/n): "
-if /i "%UPLOAD%"=="y" (
-    echo.
-    echo Creating GitHub release v%VERSION%...
+if /i not "%UPLOAD%"=="y" goto :done
 
-    :: Check if gh is available
-    where gh >nul 2>nul
-    if errorlevel 1 (
-        echo ERROR: GitHub CLI (gh) not found. Install it from https://cli.github.com
-        pause
-        exit /b 1
-    )
+echo.
+echo Creating GitHub release v%VERSION%...
 
-    :: Delete existing release if it exists (to update)
-    gh release delete "v%VERSION%" --yes 2>nul
-
-    :: Create new release and upload files
-    gh release create "v%VERSION%" "dist-electron\FlashBack USB Setup %VERSION%.exe" "dist-electron\latest.yml" --title "v%VERSION%" --notes "Release v%VERSION%" --latest
-
-    if errorlevel 1 (
-        echo.
-        echo ERROR: Failed to create release
-        pause
-        exit /b 1
-    )
-
-    echo.
-    echo ========================================
-    echo   Release v%VERSION% uploaded to GitHub!
-    echo ========================================
+:: Check if gh is available
+where gh >nul 2>nul
+if errorlevel 1 (
+    echo ERROR: GitHub CLI ^(gh^) not found. Install it from https://cli.github.com
+    pause
+    exit /b 1
 )
 
+:: Delete existing release if it exists (to update)
+gh release delete "v%VERSION%" --yes 2>nul
+
+:: Create new release and upload files
+gh release create "v%VERSION%" "dist-electron\FlashBack USB Setup %VERSION%.exe" "dist-electron\latest.yml" --title "v%VERSION%" --notes "Release v%VERSION%" --latest
+
+if errorlevel 1 (
+    echo.
+    echo ERROR: Failed to create release
+    pause
+    exit /b 1
+)
+
+echo.
+echo ========================================
+echo   Release v%VERSION% uploaded to GitHub!
+echo ========================================
+
+:done
 pause
