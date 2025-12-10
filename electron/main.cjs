@@ -33,6 +33,7 @@ const pdfGenerator = require('./services/pdfGenerator.cjs');
 const eventLogger = require('./services/eventLogger.cjs');
 const { createCrudHandlers, registerCrudHandlers } = require('./services/crudFactory.cjs');
 const wusbkit = require('./services/wusbkit.cjs');
+const autoUpdater = require('./services/autoUpdater.cjs');
 const {
   appendModelIdCondition,
   USB_DRIVE_BASE_SELECT,
@@ -80,6 +81,15 @@ function createWindow() {
 
 app.whenReady().then(() => {
   createWindow();
+
+  // Initialize auto-updater (only in packaged builds)
+  if (app.isPackaged) {
+    autoUpdater.init();
+    // Check for updates after 3 seconds
+    setTimeout(() => {
+      autoUpdater.checkForUpdates();
+    }, 3000);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
