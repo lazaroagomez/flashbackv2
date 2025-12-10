@@ -68,10 +68,15 @@ if errorlevel 1 (
 echo Restoring autoUpdater.cjs...
 powershell -Command "(Get-Content 'electron\services\autoUpdater.cjs') -replace '%GITHUB_TOKEN%', '__GH_TOKEN__' | Set-Content 'electron\services\autoUpdater.cjs'"
 
+:: Find the actual exe file (electron-builder may modify version format)
+for %%f in ("dist-electron\FlashBack USB Setup *.exe") do (
+    if not "%%~xf"==".blockmap" set "EXE_FILE=%%f"
+)
+
 echo.
 echo ========================================
 echo   Build complete
-echo   Output: dist-electron\FlashBack USB Setup %VERSION%.exe
+echo   Output: %EXE_FILE%
 echo ========================================
 echo.
 
@@ -94,7 +99,7 @@ if errorlevel 1 (
 gh release delete "v%VERSION%" --yes 2>nul
 
 :: Create new release and upload files
-gh release create "v%VERSION%" "dist-electron\FlashBack USB Setup %VERSION%.exe" "dist-electron\latest.yml" --title "v%VERSION%" --notes "Release v%VERSION%" --latest
+gh release create "v%VERSION%" "%EXE_FILE%" "dist-electron\latest.yml" --title "v%VERSION%" --notes "Release v%VERSION%" --latest
 
 if errorlevel 1 (
     echo.
