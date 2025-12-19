@@ -5,13 +5,15 @@ const { generateDataMatrix } = require('./barcodeGenerator.cjs');
 const STICKER_WIDTH = 107.28;
 const STICKER_HEIGHT = 28.08;
 const PADDING = 1;
+const BARCODE_LEFT_MARGIN = 2; // Left margin before barcode
+const BARCODE_SIZE_REDUCTION = 4; // Reduce barcode to free horizontal space
 
 // Layout constants
-const BOTTOM_ROW_HEIGHT = 5; // 4pt font + 1pt breathing room
-const MIN_VERSION_FONT = 6;
-const MAX_VERSION_FONT = 6;
-const MIN_MAIN_FONT = 5;
-const MAX_MAIN_FONT = 6;  // USB Type 6pt
+const BOTTOM_ROW_HEIGHT = 6; // 5pt font + 1pt breathing room
+const MIN_VERSION_FONT = 7;
+const MAX_VERSION_FONT = 7;
+const MIN_MAIN_FONT = 4;
+const MAX_MAIN_FONT = 5;  // USB Type 5pt (reduced from 6pt)
 
 /**
  * Truncate text to fit within maxWidth, adding "..." if truncated
@@ -65,22 +67,25 @@ async function drawSticker(page, usb, font, fontBold, doc) {
   const width = STICKER_WIDTH;
   const height = STICKER_HEIGHT;
 
-  // === ZONE 1: Data Matrix (left side, nearly full height) ===
-  const barcodeSize = height - (PADDING * 2);
+  // === ZONE 1: Data Matrix (left side, reduced size with left margin) ===
+  const barcodeSize = height - (PADDING * 2) - BARCODE_SIZE_REDUCTION;
   const barcodeContent = usb.hardware_serial || usb.usb_id; // Encode UUID, fallback to USB ID
   const barcodeDataUrl = await generateDataMatrix(barcodeContent);
   const barcodeImageBytes = Buffer.from(barcodeDataUrl.split(',')[1], 'base64');
   const barcodeImage = await doc.embedPng(barcodeImageBytes);
 
+  // Center barcode vertically
+  const barcodeY = (height - barcodeSize) / 2;
+
   page.drawImage(barcodeImage, {
-    x: PADDING,
-    y: PADDING,
+    x: BARCODE_LEFT_MARGIN,
+    y: barcodeY,
     width: barcodeSize,
     height: barcodeSize
   });
 
   // === Calculate text area bounds ===
-  const textX = PADDING + barcodeSize + 2;
+  const textX = BARCODE_LEFT_MARGIN + barcodeSize + 2;
   const textWidth = width - textX - PADDING;
   const textCenterX = (textX + width) / 2;
 
@@ -89,7 +94,7 @@ async function drawSticker(page, usb, font, fontBold, doc) {
   const safeBottomY = bottomRowY + BOTTOM_ROW_HEIGHT; // Text must stay above this line
 
   // === ZONE 4: Bottom row (FIXED, draw first to ensure it's always there) ===
-  const bottomFontSize = 4;
+  const bottomFontSize = 5;
 
   // USB ID - bottom left, next to barcode
   page.drawText(usb.usb_id, {
@@ -142,9 +147,9 @@ async function drawSticker(page, usb, font, fontBold, doc) {
   const versionTopY = mainY - 1; // 1pt gap below main text
   const maxTextWidth = textWidth - 2;
 
-  // Use 6pt font for version (same as USB Type, larger than technician name)
-  const versionFontSize = 6;
-  const lineHeight = versionFontSize + 1; // Line spacing for 6pt
+  // Use 7pt font for version (larger than USB Type for emphasis)
+  const versionFontSize = MAX_VERSION_FONT;
+  const lineHeight = versionFontSize + 1; // Line spacing for version text
 
   // Line 1 position: just below main text
   const line1Y = versionTopY - versionFontSize;
