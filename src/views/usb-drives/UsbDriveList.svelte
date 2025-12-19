@@ -265,14 +265,19 @@
     }
   }
 
+  // Load fresh data every time the page is opened
   $effect(() => {
     loadReferenceData();
     loadUsbDrives();
+  });
 
+  // Keyboard shortcuts - separate effect for event listener lifecycle
+  $effect(() => {
     window.addEventListener('keydown', handleKeydown);
     return () => window.removeEventListener('keydown', handleKeydown);
   });
 
+  // Focus search input after loading
   $effect(() => {
     if (!loading && multiSearchInputRef) {
       setTimeout(() => multiSearchInputRef?.focus(), 100);

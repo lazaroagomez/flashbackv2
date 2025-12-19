@@ -684,7 +684,7 @@ ipcMain.handle('usb:getAll', async (event, filters = {}) => {
     }
   }
 
-  sql += ' ORDER BY u.usb_id';
+  sql += ' ORDER BY u.usb_id DESC';
 
   return database.query(sql, params);
 });
