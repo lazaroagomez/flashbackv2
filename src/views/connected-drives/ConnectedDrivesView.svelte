@@ -9,6 +9,7 @@
   } from '../../lib/stores/connectedDrives.svelte.js';
   import ConfirmDialog from '../../lib/components/ConfirmDialog.svelte';
   import BulkEditModal from '../../lib/components/BulkEditModal.svelte';
+  import StatusBadge from '../../lib/components/StatusBadge.svelte';
 
   let { navigate } = $props();
 
@@ -353,9 +354,8 @@
                     />
                   </th>
                   <th>USB ID</th>
-                  <th>Model</th>
-                  <th>Serial</th>
-                  <th>Size (GB)</th>
+                  <th>Status</th>
+                  <th>Details</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -378,9 +378,12 @@
                       />
                     </td>
                     <td class="font-mono font-bold text-success">{drive.usbId}</td>
-                    <td>{drive.model}</td>
-                    <td class="font-mono text-sm">{drive.serial || '—'}</td>
-                    <td>{drive.sizeGB}</td>
+                    <td>
+                      <StatusBadge status={drive.status} />
+                    </td>
+                    <td class="text-xs text-base-content/70">
+                      {[drive.platformName, drive.usbTypeName, drive.modelName, drive.versionCode, drive.technicianName].filter(Boolean).join(' | ')}
+                    </td>
                     <td onclick={(e) => e.stopPropagation()}>
                       {#if queueItem}
                         {#if queueItem.status === 'formatting'}

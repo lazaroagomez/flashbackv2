@@ -761,23 +761,50 @@ ipcMain.handle('usb:detect', async () => {
       return toPlainObject(mapped);
     }
 
-    // Query database for matching serials
+    // Query database for matching serials with full entity data
     const placeholders = serials.map(() => '?').join(',');
     const rows = await database.query(
-      `SELECT id, usb_id, hardware_serial FROM usb_drives WHERE hardware_serial IN (${placeholders})`,
+      `SELECT u.id, u.usb_id, u.hardware_serial, u.status,
+              p.name as platform_name,
+              t.name as usb_type_name,
+              m.name as model_name,
+              v.version_code,
+              tech.name as technician_name
+       FROM usb_drives u
+       JOIN platforms p ON u.platform_id = p.id
+       JOIN usb_types t ON u.usb_type_id = t.id
+       LEFT JOIN models m ON u.model_id = m.id
+       JOIN versions v ON u.version_id = v.id
+       LEFT JOIN technicians tech ON u.technician_id = tech.id
+       WHERE u.hardware_serial IN (${placeholders})`,
       serials
     );
 
-    // Create lookup map for registered drives
-    const serialMap = new Map(rows.map(r => [r.hardware_serial, { id: r.id, usbId: r.usb_id }]));
+    // Create lookup map for registered drives with all entity data
+    const serialMap = new Map(rows.map(r => [r.hardware_serial, {
+      id: r.id,
+      usbId: r.usb_id,
+      status: r.status,
+      platformName: r.platform_name,
+      usbTypeName: r.usb_type_name,
+      modelName: r.model_name,
+      versionCode: r.version_code,
+      technicianName: r.technician_name
+    }]));
 
-    // Enrich devices with registration status
+    // Enrich devices with registration status and entity data
     for (const device of mapped) {
       const registered = serialMap.get(device.serial);
       if (registered) {
         device.isRegistered = true;
         device.dbId = registered.id;
         device.usbId = registered.usbId;
+        device.status = registered.status;
+        device.platformName = registered.platformName;
+        device.usbTypeName = registered.usbTypeName;
+        device.modelName = registered.modelName;
+        device.versionCode = registered.versionCode;
+        device.technicianName = registered.technicianName;
       }
     }
 

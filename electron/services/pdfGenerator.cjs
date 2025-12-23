@@ -12,6 +12,7 @@ const BARCODE_SIZE_REDUCTION = 4; // Reduce barcode to free horizontal space
 const BOTTOM_ROW_HEIGHT = 6; // 5pt font + 1pt breathing room
 const MIN_VERSION_FONT = 7;
 const MAX_VERSION_FONT = 7;
+const TWO_LINE_VERSION_FONT = 5;  // Reduced font for 2-line version text
 const MIN_MAIN_FONT = 4;
 const MAX_MAIN_FONT = 5;  // USB Type 5pt (reduced from 6pt)
 
@@ -173,14 +174,21 @@ async function drawSticker(page, usb, font, fontBold, doc) {
       color: rgb(0, 0, 0)
     });
   } else if (line2Y >= safeBottomY) {
-    // We have space for two lines - split the text
+    // We have space for two lines - use reduced font size (5pt instead of 7pt)
+    const twoLineFontSize = TWO_LINE_VERSION_FONT;
+    const twoLineHeight = twoLineFontSize + 1;
+
+    // Recalculate line positions with smaller font
+    const twoLine1Y = versionTopY - twoLineFontSize;
+    const twoLine2Y = twoLine1Y - twoLineHeight;
+
     let line1 = '';
     let line2 = versionCode;
 
-    // Find the split point - fill line 1 as much as possible
+    // Find the split point - fill line 1 as much as possible (more chars fit at 5pt)
     for (let i = 1; i <= versionCode.length; i++) {
       const testLine = versionCode.substring(0, i);
-      if (font.widthOfTextAtSize(testLine, versionFontSize) > maxTextWidth) {
+      if (font.widthOfTextAtSize(testLine, twoLineFontSize) > maxTextWidth) {
         line1 = versionCode.substring(0, i - 1);
         line2 = versionCode.substring(i - 1);
         break;
@@ -189,24 +197,24 @@ async function drawSticker(page, usb, font, fontBold, doc) {
     }
 
     // Truncate line 2 if it's still too long
-    line2 = truncateText(line2, font, versionFontSize, maxTextWidth);
+    line2 = truncateText(line2, font, twoLineFontSize, maxTextWidth);
 
-    // Draw line 1
-    const line1Width = font.widthOfTextAtSize(line1, versionFontSize);
+    // Draw line 1 at 5pt
+    const line1Width = font.widthOfTextAtSize(line1, twoLineFontSize);
     page.drawText(line1, {
       x: textCenterX - (line1Width / 2),
-      y: line1Y,
-      size: versionFontSize,
+      y: twoLine1Y,
+      size: twoLineFontSize,
       font: font,
       color: rgb(0, 0, 0)
     });
 
-    // Draw line 2
-    const line2Width = font.widthOfTextAtSize(line2, versionFontSize);
+    // Draw line 2 at 5pt
+    const line2Width = font.widthOfTextAtSize(line2, twoLineFontSize);
     page.drawText(line2, {
       x: textCenterX - (line2Width / 2),
-      y: line2Y,
-      size: versionFontSize,
+      y: twoLine2Y,
+      size: twoLineFontSize,
       font: font,
       color: rgb(0, 0, 0)
     });

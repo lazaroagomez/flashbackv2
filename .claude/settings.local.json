@@ -10,7 +10,9 @@
       "Bash(gh secret:*)",
       "Bash(gh repo view:*)",
       "Bash(where:*)",
-      "Bash(gh api:*)"
+      "Bash(gh api:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
