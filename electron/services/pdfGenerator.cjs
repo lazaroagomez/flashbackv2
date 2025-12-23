@@ -148,40 +148,34 @@ async function drawSticker(page, usb, font, fontBold, doc) {
   const versionTopY = mainY - 1; // 1pt gap below main text
   const maxTextWidth = textWidth - 2;
 
-  // Use 7pt font for version (larger than USB Type for emphasis)
-  const versionFontSize = MAX_VERSION_FONT;
-  const lineHeight = versionFontSize + 1; // Line spacing for version text
+  // Font sizes
+  const singleLineFontSize = MAX_VERSION_FONT; // 7pt for single line
+  const twoLineFontSize = TWO_LINE_VERSION_FONT; // 5pt for two lines
+  const twoLineHeight = twoLineFontSize + 1;
 
-  // Line 1 position: just below main text
-  const line1Y = versionTopY - versionFontSize;
-  // Line 2 position: below line 1, but MUST stay above safeBottomY
-  const line2Y = line1Y - lineHeight;
+  // Calculate line positions using 5pt font (for two-line case)
+  const twoLine1Y = versionTopY - twoLineFontSize;
+  const twoLine2Y = twoLine1Y - twoLineHeight;
 
-  // Check if we have space for at least one line
-  if (line1Y < safeBottomY) {
+  // Check if we have space for at least one line (using smaller 5pt)
+  if (twoLine1Y < safeBottomY) {
     return; // No space for version at all
   }
 
-  // Check if version fits on one line
-  if (font.widthOfTextAtSize(versionCode, versionFontSize) <= maxTextWidth) {
-    // Single line
-    const versionWidth = font.widthOfTextAtSize(versionCode, versionFontSize);
+  // Check if version fits on one line at 7pt
+  if (font.widthOfTextAtSize(versionCode, singleLineFontSize) <= maxTextWidth) {
+    // Single line at 7pt
+    const line1Y = versionTopY - singleLineFontSize;
+    const versionWidth = font.widthOfTextAtSize(versionCode, singleLineFontSize);
     page.drawText(versionCode, {
       x: textCenterX - (versionWidth / 2),
       y: line1Y,
-      size: versionFontSize,
+      size: singleLineFontSize,
       font: font,
       color: rgb(0, 0, 0)
     });
-  } else if (line2Y >= safeBottomY) {
-    // We have space for two lines - use reduced font size (5pt instead of 7pt)
-    const twoLineFontSize = TWO_LINE_VERSION_FONT;
-    const twoLineHeight = twoLineFontSize + 1;
-
-    // Recalculate line positions with smaller font
-    const twoLine1Y = versionTopY - twoLineFontSize;
-    const twoLine2Y = twoLine1Y - twoLineHeight;
-
+  } else if (twoLine2Y >= safeBottomY) {
+    // We have space for two lines at 5pt
     let line1 = '';
     let line2 = versionCode;
 
@@ -219,13 +213,13 @@ async function drawSticker(page, usb, font, fontBold, doc) {
       color: rgb(0, 0, 0)
     });
   } else {
-    // Only space for one line - truncate
-    const truncatedVersion = truncateText(versionCode, font, versionFontSize, maxTextWidth);
-    const versionWidth = font.widthOfTextAtSize(truncatedVersion, versionFontSize);
+    // Only space for one line - truncate at 5pt (smaller font to fit more)
+    const truncatedVersion = truncateText(versionCode, font, twoLineFontSize, maxTextWidth);
+    const versionWidth = font.widthOfTextAtSize(truncatedVersion, twoLineFontSize);
     page.drawText(truncatedVersion, {
       x: textCenterX - (versionWidth / 2),
-      y: line1Y,
-      size: versionFontSize,
+      y: twoLine1Y,
+      size: twoLineFontSize,
       font: font,
       color: rgb(0, 0, 0)
     });
