@@ -1470,8 +1470,8 @@ ipcMain.handle('usb:bulkUpdate', async (event, usbIds, updates, username) => {
       // Handle repurpose (platform/type/model/version change)
       if (updates.repurpose) {
         const repurpose = updates.repurpose;
-        setClauses.push('usb_type_id = ?', 'model_id = ?', 'version_id = ?');
-        params.push(repurpose.usb_type_id, repurpose.model_id || null, repurpose.version_id);
+        setClauses.push('platform_id = ?', 'usb_type_id = ?', 'model_id = ?', 'version_id = ?');
+        params.push(repurpose.platform_id, repurpose.usb_type_id, repurpose.model_id || null, repurpose.version_id);
 
         // Get new names for logging using eventLogger
         const [newType] = await connection.execute(
