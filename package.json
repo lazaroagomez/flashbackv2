@@ -1,6 +1,6 @@
 {
   "name": "flashback-usb",
-  "version": "1.5.8",
+  "version": "1.5.9",
   "type": "module",
   "description": "USB Drive Inventory Management System",
   "main": "electron/main.cjs",
@@ -38,8 +38,8 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "lazaroagomez",
-      "repo": "flashbackv2"
+      "owner": "ptsisqe",
+      "repo": "flashback-releases"
     },
     "extraResources": [
       {
